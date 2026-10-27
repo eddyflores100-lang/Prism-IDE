@@ -1,0 +1,1940 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prism — Your machine. Every AI. One cockpit.</title>
+<style>
+/* ================================================================
+   PRISM IDE — original interface prototype
+   Tokens: base #09090B · panels #0F0F12 · elevated #16161A
+   Accent emerald #10B981 · provider colors per cockpit
+   ================================================================ */
+
+/* ---------- 1. tokens & reset ---------- */
+:root{
+  --bg:#09090B; --panel:#0F0F12; --elev:#16161A;
+  --hover:rgba(255,255,255,.04); --active:rgba(255,255,255,.07);
+  --line:rgba(255,255,255,.08); --line-soft:rgba(255,255,255,.05);
+  --inset:inset 0 1px 0 rgba(255,255,255,.04);
+  --t1:#FAFAFA; --t2:#A1A1AA; --t3:#71717A;
+  --acc:#10B981; --acc-dim:rgba(16,185,129,.14); --acc-line:rgba(16,185,129,.45);
+  --warn:#F59E0B; --err:#F87171;
+  --p-claude:#D97757; --p-gpt:#10A37F; --p-gemini:#8B5CF6; --p-glm:#38BDF8;
+  --r:8px; --r-lg:10px;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --cockpit-w:340px;
+  --float-shadow:0 8px 30px rgba(0,0,0,.5);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--bg);color:var(--t1);font-family:var(--sans);font-size:12px;
+  overflow:hidden;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+::selection{background:rgba(16,185,129,.28)}
+button{font-family:inherit;background:none;border:0;color:inherit;cursor:pointer;font-size:inherit}
+input,textarea{font-family:inherit;color:inherit}
+input:focus,textarea:focus,button:focus-visible{outline:none}
+:focus-visible{outline:1px solid var(--acc-line);outline-offset:1px;border-radius:4px}
+svg{display:block}
+.tnum{font-variant-numeric:tabular-nums}
+
+/* slim scrollbars */
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,.08);border-radius:8px}
+::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.16)}
+::-webkit-scrollbar-corner{background:transparent}
+*{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.08) transparent}
+
+/* tooltips (activity bar) */
+[data-tip]{position:relative}
+[data-tip]::after{
+  content:attr(data-tip);position:absolute;left:calc(100% + 12px);top:50%;
+  transform:translateY(-50%) translateX(-4px);white-space:nowrap;
+  background:var(--elev);border:1px solid var(--line);border-radius:6px;
+  padding:4px 8px;font-size:11px;color:var(--t2);pointer-events:none;
+  opacity:0;transition:opacity .15s ease .25s,transform .15s ease .25s;z-index:60;
+  box-shadow:var(--float-shadow);
+}
+[data-tip]:hover::after{opacity:1;transform:translateY(-50%) translateX(0)}
+
+/* ---------- 2. app grid ---------- */
+.app{
+  height:100vh;display:grid;
+  grid-template-columns:48px 240px minmax(0,1fr) var(--cockpit-w);
+  grid-template-rows:minmax(0,1fr) 24px;
+}
+.app.cockpit-hidden{--cockpit-w:0px}
+.activity{grid-row:1;grid-column:1}
+.sidepanel{grid-row:1;grid-column:2}
+.maincol{grid-row:1;grid-column:3}
+.cockpit{grid-row:1;grid-column:4}
+.statusbar{grid-row:2;grid-column:1 / -1}
+
+/* ---------- 3. activity bar ---------- */
+.activity{background:var(--bg);border-right:1px solid var(--line);
+  display:flex;flex-direction:column;align-items:center;padding:6px 0 8px;gap:2px;z-index:40}
+.act-logo{width:32px;height:32px;display:grid;place-items:center;margin-bottom:10px;color:var(--t1)}
+.act-btn{width:36px;height:36px;border-radius:var(--r);display:grid;place-items:center;
+  color:var(--t3);position:relative;transition:color .15s,background .15s}
+.act-btn:hover{color:var(--t2);background:var(--hover)}
+.act-btn.on{color:var(--t1)}
+.act-btn.on::before{content:"";position:absolute;left:-6px;top:8px;bottom:8px;width:2px;
+  border-radius:2px;background:var(--acc)}
+.act-ic{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.5;
+  stroke-linecap:round;stroke-linejoin:round}
+.act-spacer{flex:1}
+.act-badge{position:absolute;top:3px;right:3px;min-width:14px;height:14px;padding:0 3px;
+  border-radius:7px;background:var(--acc);color:#052E1C;font-size:9px;font-weight:700;
+  display:grid;place-items:center;font-variant-numeric:tabular-nums}
+.act-dot{position:absolute;bottom:5px;right:5px;width:7px;height:7px;border-radius:50%;
+  background:var(--acc);border:2px solid var(--bg)}
+.act-avatar{width:28px;height:28px;border-radius:50%;background:var(--elev);
+  border:1px solid var(--line);display:grid;place-items:center;font-size:10px;font-weight:600;
+  color:var(--t2);letter-spacing:.03em;cursor:default;margin-top:6px}
+
+/* ---------- 4. side panel ---------- */
+.sidepanel{background:var(--panel);border-right:1px solid var(--line);
+  display:flex;flex-direction:column;min-width:0;z-index:30}
+.sp-head{height:36px;flex:none;display:flex;align-items:center;gap:8px;padding:0 12px;
+  font-size:10.5px;font-weight:600;letter-spacing:.09em;color:var(--t3);
+  border-bottom:1px solid var(--line-soft);text-transform:uppercase}
+.sp-head .sp-actions{margin-left:auto;display:flex;gap:2px}
+.sp-ib{width:22px;height:22px;border-radius:5px;display:grid;place-items:center;color:var(--t3)}
+.sp-ib:hover{background:var(--hover);color:var(--t2)}
+.sp-body{flex:1;overflow-y:auto;overflow-x:hidden;padding:6px 0 12px}
+
+/* explorer */
+.proj-row{display:flex;align-items:center;gap:6px;padding:6px 12px;font-weight:600;
+  font-size:12px;color:var(--t1);cursor:default}
+.proj-row .crumb{color:var(--t3);font-weight:400}
+.tree-file{display:flex;align-items:center;gap:7px;height:24px;padding:0 12px 0 18px;
+  color:var(--t2);cursor:pointer;user-select:none;white-space:nowrap;transition:background .12s,color .12s}
+.tree-file:hover{background:var(--hover);color:var(--t1)}
+.tree-file.active{background:var(--active);color:var(--t1);box-shadow:inset 2px 0 0 var(--acc)}
+.f-ic{width:15px;flex:none;text-align:center;font-family:var(--mono);font-size:8.5px;font-weight:700;
+  letter-spacing:.02em}
+.fi-ts{color:#82B8F5}.fi-json{color:#F0B37E}.fi-md{color:#A1A1AA}.fi-sh{color:#8FD6A8}
+.tree-name{flex:1;overflow:hidden;text-overflow:ellipsis}
+.gitmark{font-size:10px;font-weight:700;color:var(--warn);font-family:var(--mono)}
+.tree-dir{display:flex;align-items:center;gap:6px;height:24px;padding:0 12px;cursor:pointer;
+  color:var(--t2);user-select:none;white-space:nowrap}
+.tree-dir:hover{background:var(--hover);color:var(--t1)}
+.chev{width:12px;height:12px;flex:none;stroke:currentColor;fill:none;stroke-width:1.8;
+  stroke-linecap:round;stroke-linejoin:round;transition:transform .15s}
+.tree-dir.open .chev{transform:rotate(90deg)}
+.tree-kids{overflow:hidden}
+
+/* search */
+.search-wrap{padding:8px 10px}
+.search-box{display:flex;align-items:center;gap:7px;background:var(--bg);
+  border:1px solid var(--line);border-radius:var(--r);padding:0 9px;height:30px;
+  transition:border-color .15s}
+.search-box:focus-within{border-color:var(--acc-line)}
+.search-box svg{width:13px;height:13px;stroke:var(--t3);fill:none;stroke-width:1.6;
+  stroke-linecap:round}
+.search-box input{flex:1;background:none;border:0;font-size:12px;color:var(--t1);min-width:0}
+.search-box input::placeholder{color:var(--t3)}
+.search-count{padding:8px 12px 4px;font-size:11px;color:var(--t3)}
+.sr-group{padding:4px 0 2px}
+.sr-file{padding:4px 12px;font-size:11px;color:var(--t2);font-weight:600;display:flex;gap:6px;align-items:center}
+.sr-file .cnt{margin-left:auto;color:var(--t3);font-weight:400;font-variant-numeric:tabular-nums}
+.sr-line{padding:3px 12px 3px 26px;font-family:var(--mono);font-size:11px;color:var(--t3);
+  cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sr-line:hover{background:var(--hover);color:var(--t2)}
+.sr-line .ln{color:var(--t3);margin-right:8px;font-variant-numeric:tabular-nums}
+.sr-line mark{background:rgba(16,185,129,.22);color:var(--t1);border-radius:2px;padding:0 1px}
+.sr-empty{padding:22px 14px;color:var(--t3);font-size:11.5px;text-align:center;line-height:1.7}
+
+/* source control */
+.scm-box{margin:8px 10px;background:var(--bg);border:1px solid var(--line);border-radius:var(--r)}
+.scm-box input{width:100%;background:none;border:0;padding:8px 10px;font-size:12px;color:var(--t1)}
+.scm-box input::placeholder{color:var(--t3)}
+.scm-commit{width:100%;border-top:1px solid var(--line-soft);padding:7px 10px;font-size:11.5px;
+  color:var(--t2);display:flex;align-items:center;gap:6px;text-align:left}
+.scm-commit:hover{color:var(--acc);background:rgba(16,185,129,.06)}
+.scm-hint{padding:2px 12px 8px;font-size:11px;color:var(--t3)}
+
+/* mcp hub */
+.mcp-hd{display:flex;align-items:center;gap:6px;padding:8px 12px 2px;font-size:11px;color:var(--t3)}
+.mcp-hd b{color:var(--t2);font-weight:600;font-variant-numeric:tabular-nums}
+.mcp-row{display:flex;align-items:center;gap:9px;padding:8px 10px 8px 12px;transition:background .12s}
+.mcp-row:hover{background:var(--hover)}
+.mcp-row + .mcp-row{border-top:1px solid var(--line-soft)}
+.dot{width:7px;height:7px;border-radius:50%;flex:none;background:var(--t3)}
+.dot.ok{background:var(--acc);box-shadow:0 0 6px rgba(16,185,129,.45)}
+.dot.warn{background:var(--warn);box-shadow:0 0 6px rgba(245,158,11,.45);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+.mcp-info{flex:1;min-width:0}
+.mcp-name{font-size:12px;font-weight:600;color:var(--t1);display:flex;align-items:center;gap:6px}
+.mcp-name .ver{font-size:10px;color:var(--t3);font-weight:400;font-family:var(--mono)}
+.mcp-sub{font-size:10.5px;color:var(--t3);margin-top:1px;font-variant-numeric:tabular-nums}
+.mcp-sub .lat{color:var(--t2)}
+.mcp-row.off .mcp-name{color:var(--t3)}
+.mcp-row.off .dot{background:var(--t3);box-shadow:none;animation:none}
+.switch{position:relative;width:26px;height:15px;flex:none}
+.switch input{position:absolute;opacity:0;inset:0;margin:0;cursor:pointer;z-index:2}
+.switch i{position:absolute;inset:0;background:rgba(255,255,255,.09);border:1px solid var(--line);
+  border-radius:999px;transition:background .15s,border-color .15s}
+.switch i::after{content:"";position:absolute;top:2px;left:2px;width:9px;height:9px;border-radius:50%;
+  background:var(--t2);transition:left .15s,background .15s}
+.switch input:checked + i{background:rgba(16,185,129,.30);border-color:var(--acc-line)}
+.switch input:checked + i::after{left:13px;background:var(--acc)}
+
+/* tunnel */
+.tun-card{margin:10px;background:var(--elev);border:1px solid var(--line);border-radius:var(--r-lg);
+  box-shadow:var(--inset);overflow:hidden}
+.tun-top{display:flex;align-items:center;gap:8px;padding:10px 12px 0}
+.tun-title{font-size:12.5px;font-weight:600;color:var(--t1);flex:1}
+.tun-chip{font-size:10px;font-weight:700;letter-spacing:.06em;padding:2px 7px;border-radius:5px}
+.tun-chip.live{color:var(--acc);background:var(--acc-dim)}
+.tun-chip.off{color:var(--t3);background:rgba(255,255,255,.06)}
+.tun-host{padding:2px 12px 0;font-family:var(--mono);font-size:12px;color:var(--t2)}
+.tun-stats{display:flex;gap:0;padding:10px 12px 6px}
+.tun-stat{flex:1;min-width:0}
+.tun-stat .k{font-size:9.5px;letter-spacing:.07em;color:var(--t3);text-transform:uppercase}
+.tun-stat .v{font-size:12.5px;color:var(--t1);margin-top:2px;font-variant-numeric:tabular-nums;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tun-spark{padding:2px 12px 8px}
+.tun-spark svg{width:100%;height:38px}
+.tun-clients{border-top:1px solid var(--line-soft)}
+.tun-cl{display:flex;align-items:center;gap:8px;padding:7px 12px;font-size:11.5px;color:var(--t2)}
+.tun-cl .cdot{width:7px;height:7px;border-radius:50%;flex:none}
+.tun-cl .where{margin-left:auto;color:var(--t3);font-variant-numeric:tabular-nums}
+.tun-cl.off{opacity:.4}
+.tun-sec{display:flex;align-items:center;gap:7px;padding:8px 12px;border-top:1px solid var(--line-soft);
+  font-size:11px;color:var(--t3)}
+.tun-sec svg{width:12px;height:12px;stroke:var(--acc);fill:none;stroke-width:1.6;flex:none;
+  stroke-linecap:round;stroke-linejoin:round}
+.tun-alt{margin:0 10px;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.tun-alt-h{display:flex;align-items:center;gap:7px;padding:8px 10px;font-size:11.5px;color:var(--t3);
+  cursor:pointer;user-select:none}
+.tun-alt-h:hover{background:var(--hover);color:var(--t2)}
+.tun-alt-h .chev{width:11px;height:11px}
+.tun-alt.open .tun-alt-h .chev{transform:rotate(90deg)}
+.tun-alt-b{display:none;border-top:1px solid var(--line-soft);padding:4px 0 6px}
+.tun-alt.open .tun-alt-b{display:block}
+.tun-note{margin:10px;padding:0 2px;font-size:10.5px;color:var(--t3);line-height:1.6}
+.tun-dev{display:flex;align-items:center;gap:8px;padding:5px 10px 5px 22px;font-size:11px;color:var(--t2)}
+.tun-dev .st{margin-left:auto;color:var(--t3)}
+
+/* settings */
+.set-row{display:flex;align-items:center;gap:10px;padding:9px 12px}
+.set-row + .set-row{border-top:1px solid var(--line-soft)}
+.set-info{flex:1;min-width:0}
+.set-name{font-size:12px;color:var(--t1)}
+.set-desc{font-size:10.5px;color:var(--t3);margin-top:1px}
+.set-swatch{width:16px;height:16px;border-radius:5px;background:var(--acc);
+  border:1px solid rgba(16,185,129,.5)}
+.set-val{font-family:var(--mono);font-size:11px;color:var(--t2);font-variant-numeric:tabular-nums}
+
+/* ---------- 5. main column / editor ---------- */
+.maincol{display:flex;flex-direction:column;min-width:0;background:var(--bg)}
+.tabbar{height:36px;flex:none;display:flex;align-items:stretch;background:#0C0C0F;
+  border-bottom:1px solid var(--line);overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
+.tabbar::-webkit-scrollbar{display:none}
+.tab{display:flex;align-items:center;gap:7px;padding:0 12px 0 14px;font-size:12px;color:var(--t3);
+  border-right:1px solid var(--line-soft);cursor:pointer;user-select:none;white-space:nowrap;
+  position:relative;transition:color .12s,background .12s}
+.tab:hover{color:var(--t2);background:var(--hover)}
+.tab.active{color:var(--t1);background:var(--bg)}
+.tab.active::before{content:"";position:absolute;left:0;right:0;top:0;height:2px;background:var(--acc)}
+.tab .f-ic{width:auto}
+.tab-close{width:16px;height:16px;border-radius:4px;display:grid;place-items:center;color:var(--t3);
+  opacity:0;transition:opacity .12s}
+.tab:hover .tab-close{opacity:1}
+.tab-close:hover{background:rgba(255,255,255,.08);color:var(--t1)}
+.tabbar-end{margin-left:auto;display:flex;align-items:center;padding-right:10px;gap:2px;flex:none}
+.edhint{font-size:10.5px;color:var(--t3);font-family:var(--mono);padding-right:4px}
+
+.editor-zone{flex:1;display:flex;min-height:0;position:relative}
+.editor-zone::before{content:"";position:absolute;inset:0 0 auto 0;height:120px;pointer-events:none;
+  background:radial-gradient(60% 120px at 50% 0%,rgba(16,185,129,.05),transparent 70%)}
+.ed-scroll{flex:1;overflow:auto;position:relative;display:flex;align-items:flex-start}
+.gutter{position:sticky;left:0;flex:none;background:var(--bg);padding:10px 0;z-index:2;
+  border-right:1px solid var(--line-soft);user-select:none}
+.gn{height:20px;padding:0 14px 0 18px;font-family:var(--mono);font-size:11.5px;line-height:20px;
+  color:#3F3F46;text-align:right;font-variant-numeric:tabular-nums}
+.gn.active{color:var(--t2)}
+.code{flex:1;min-width:0;padding:10px 0;font-family:var(--mono);font-size:13px;line-height:20px}
+.code-line{height:20px;padding:0 16px 0 14px;white-space:pre;color:#C6C6D2;cursor:text}
+.code-line.active{background:rgba(255,255,255,.045)}
+.code-line.flash{animation:lineflash 1.4s ease-out}
+@keyframes lineflash{0%{background:rgba(16,185,129,.20)}100%{background:transparent}}
+.minimap{flex:none;width:64px;align-self:stretch;border-left:1px solid var(--line-soft);
+  padding:10px 0 0 8px;overflow:hidden;user-select:none}
+.mm-bar{height:2px;margin-bottom:1px;border-radius:1px;background:rgba(255,255,255,.13);
+  filter:blur(.3px)}
+.syntax .cm{color:#5A5F73;font-style:italic}
+.syntax .st{color:#8FD6A8}
+.syntax .kw{color:#B8A7F5}
+.syntax .num{color:#F0B37E}
+.syntax .fn{color:#82B8F5}
+.syntax .ty{color:#6FD3E0}
+.syntax .key{color:#82B8F5}
+.syntax .pn{color:#6E6E7A}
+.syntax .hd{color:#FAFAFA;font-weight:600}
+.syntax .lk{color:var(--acc)}
+.syntax .bt{color:#B8A7F5}
+
+/* ---------- 6. bottom panel ---------- */
+.botpanel{flex:none;height:232px;display:flex;flex-direction:column;border-top:1px solid var(--line);
+  background:#0C0C0F;transition:height .16s ease}
+.botpanel.collapsed{height:31px}
+.bot-head{height:31px;flex:none;display:flex;align-items:center;padding:0 8px 0 4px;gap:2px}
+.bot-tab{padding:5px 10px;font-size:11px;font-weight:500;letter-spacing:.04em;color:var(--t3);
+  border-radius:6px;text-transform:uppercase;user-select:none}
+.bot-tab:hover{color:var(--t2);background:var(--hover)}
+.bot-tab.on{color:var(--t1);background:var(--active)}
+.bot-tab .cnt{color:var(--warn);font-variant-numeric:tabular-nums;margin-left:3px}
+.bot-end{margin-left:auto;display:flex;align-items:center;gap:2px}
+.bot-ib{width:24px;height:24px;border-radius:6px;display:grid;place-items:center;color:var(--t3)}
+.bot-ib:hover{background:var(--hover);color:var(--t2)}
+.bot-ib svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.6;
+  stroke-linecap:round;stroke-linejoin:round}
+#botChev svg{transition:transform .16s}
+.botpanel.collapsed #botChev svg{transform:rotate(180deg)}
+.bot-body{flex:1;min-height:0;display:none}
+.bot-body.on{display:flex}
+
+/* terminal */
+.term{flex:1;overflow-y:auto;padding:8px 12px;font-family:var(--mono);font-size:12px;line-height:18px;
+  cursor:text;position:relative}
+.t-line{white-space:pre-wrap;word-break:break-word;color:#C6C6D2}
+.t-cmd .p-user{color:var(--acc)}
+.t-cmd .p-path{color:#82B8F5}
+.t-cmd .p-dl{color:var(--t3)}
+.t-cmd .c{color:var(--t1)}
+.t-dim{color:var(--t3)}
+.t-ok{color:var(--acc)}
+.t-warn{color:var(--warn)}
+.t-err{color:var(--err)}
+.t-hl{color:#82B8F5}
+.t-line .cur{display:inline-block;width:7px;height:14px;background:var(--t2);vertical-align:-2px;
+  animation:blink 1.05s step-end infinite}
+.term.nofocus .cur{opacity:.35;animation:none}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+.term-hidden{position:absolute;opacity:0;width:1px;height:1px;border:0;padding:0;left:-9999px}
+
+/* problems / output / logs */
+.plist{flex:1;overflow-y:auto;padding:6px 0}
+.p-row{display:flex;gap:9px;align-items:flex-start;padding:5px 14px;font-size:12px;color:var(--t2)}
+.p-row:hover{background:var(--hover)}
+.p-row .glyph{flex:none;font-family:var(--mono)}
+.p-row .glyph.w{color:var(--warn)}
+.p-row .loc{font-family:var(--mono);font-size:11px;color:var(--t3);white-space:nowrap}
+.p-row .msg{flex:1}
+.olist{flex:1;overflow-y:auto;padding:8px 12px;font-family:var(--mono);font-size:11.5px;line-height:18px}
+.loglist{flex:1;overflow-y:auto;padding:8px 12px;font-family:var(--mono);font-size:11px;line-height:17px}
+.loglist .syntax{white-space:pre;overflow:hidden;text-overflow:ellipsis}
+
+/* ---------- 7. AI cockpit ---------- */
+.cockpit{background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column;
+  min-width:0;overflow:hidden}
+.ck-head{padding:10px 12px 8px;flex:none}
+.ck-title{display:flex;align-items:baseline;gap:8px}
+.ck-title h1{font-size:13px;font-weight:600;color:var(--t1);letter-spacing:.01em}
+.ck-title .sub{font-size:10.5px;color:var(--t3)}
+.ck-rate{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--t2);
+  font-variant-numeric:tabular-nums;display:flex;align-items:center;gap:5px}
+.ck-rate .rdot{width:6px;height:6px;border-radius:50%;background:var(--acc);animation:pulse 2s infinite}
+.ck-sub2{margin-top:2px;font-size:10.5px;color:var(--t3);display:flex;align-items:center;gap:5px}
+.ck-hub{display:inline-flex;align-items:center;gap:5px;color:var(--t2)}
+.ck-hub .dot{width:5px;height:5px}
+.ck-hub .dot.ok{box-shadow:none}
+.ck-tabs{display:flex;gap:4px;padding:0 10px 10px;flex:none}
+.ck-tab{flex:1;height:28px;border-radius:var(--r);border:1px solid var(--line);display:flex;
+  align-items:center;justify-content:center;gap:6px;font-size:11.5px;font-weight:600;color:var(--t3);
+  transition:all .15s;background:var(--bg)}
+.ck-tab .pd{width:7px;height:7px;border-radius:50%;background:var(--pc);opacity:.7;flex:none}
+.ck-tab:hover{color:var(--t2);border-color:rgba(255,255,255,.14)}
+.ck-tab.on{color:var(--t1);border-color:color-mix(in srgb,var(--pc) 55%,transparent);
+  background:color-mix(in srgb,var(--pc) 8%,var(--bg));
+  box-shadow:0 0 14px color-mix(in srgb,var(--pc) 18%,transparent),var(--inset)}
+.ck-tab.on .pd{opacity:1;box-shadow:0 0 8px var(--pc)}
+.ck-msgs{flex:1;overflow-y:auto;padding:4px 12px 10px;display:flex;flex-direction:column;gap:12px}
+.msg{max-width:100%}
+.msg-head{display:flex;align-items:center;gap:6px;margin-bottom:4px}
+.msg-av{width:8px;height:8px;border-radius:50%;background:var(--pc);flex:none}
+.msg-name{font-size:11px;font-weight:600;color:var(--t2)}
+.msg-time{font-size:10px;color:var(--t3);font-variant-numeric:tabular-nums}
+.msg-body{font-size:12.5px;line-height:1.55;color:#D6D6DE;overflow-wrap:break-word}
+.msg.user{align-self:flex-end;max-width:88%}
+.msg.user .msg-body{background:var(--elev);border:1px solid var(--line);border-radius:var(--r-lg);
+  border-bottom-right-radius:4px;padding:8px 11px;box-shadow:var(--inset)}
+.msg.user .msg-head{justify-content:flex-end}
+.msg.thinking .msg-body{color:var(--t3);display:flex;gap:4px;align-items:center;padding:4px 0}
+.msg.thinking .d{width:4px;height:4px;border-radius:50%;background:var(--t3);animation:tdots 1.2s infinite}
+.msg.thinking .d:nth-child(2){animation-delay:.15s}
+.msg.thinking .d:nth-child(3){animation-delay:.3s}
+@keyframes tdots{0%,100%{opacity:.25;transform:translateY(0)}50%{opacity:1;transform:translateY(-2px)}}
+
+/* tool chips */
+.chip{margin-top:8px;border:1px solid var(--line);border-radius:var(--r);background:var(--bg);
+  overflow:hidden;max-width:100%}
+.chip-h{display:flex;align-items:center;gap:7px;padding:6px 9px;cursor:pointer;user-select:none}
+.chip-h:hover{background:var(--hover)}
+.chip-ic{width:14px;height:14px;flex:none;stroke:currentColor;fill:none;stroke-width:1.6;
+  stroke-linecap:round;stroke-linejoin:round;color:var(--t3)}
+.chip.pending .chip-ic{color:var(--warn)}
+.chip.approved .chip-ic{color:var(--acc)}
+.chip.denied .chip-ic{color:var(--t3)}
+.chip-label{font-family:var(--mono);font-size:11px;color:var(--t2);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.chip-label b{color:var(--t1);font-weight:600}
+.chip-state{margin-left:auto;flex:none;display:flex;align-items:center;gap:5px;font-size:10.5px}
+.chip-state .pd{width:5px;height:5px;border-radius:50%;background:var(--warn);animation:pulse 1.6s infinite}
+.chip.pending .chip-state{color:var(--warn)}
+.chip.approved .chip-state{color:var(--acc)}
+.chip.denied .chip-state{color:var(--t3)}
+.chip-ms{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.chip-btns{display:flex;gap:4px}
+.chip-btn{font-size:10px;font-weight:600;padding:2px 8px;border-radius:5px;border:1px solid var(--line);
+  color:var(--t2);letter-spacing:.02em}
+.chip-btn.approve:hover{color:var(--acc);border-color:var(--acc-line);background:var(--acc-dim)}
+.chip-btn.deny:hover{color:var(--err);border-color:rgba(248,113,113,.4);background:rgba(248,113,113,.08)}
+.chip-json{display:none;border-top:1px solid var(--line-soft);padding:7px 9px;
+  font-family:var(--mono);font-size:10.5px;line-height:16px;white-space:pre;overflow-x:auto;
+  color:#C6C6D2;background:rgba(0,0,0,.25)}
+.chip.open .chip-json{display:block}
+
+/* composer */
+.ck-composer{flex:none;padding:8px 10px 10px;border-top:1px solid var(--line-soft)}
+.composer{background:var(--bg);border:1px solid var(--line);border-radius:var(--r-lg);
+  transition:border-color .15s;box-shadow:var(--inset)}
+.composer:focus-within{border-color:color-mix(in srgb,var(--pc) 45%,transparent)}
+.composer textarea{width:100%;background:none;border:0;resize:none;padding:9px 11px 4px;
+  font-size:12.5px;line-height:1.45;color:var(--t1);max-height:96px;min-height:20px;display:block}
+.composer textarea::placeholder{color:var(--t3)}
+.ck-send{display:flex;align-items:center;gap:8px;padding:4px 6px 6px 11px}
+.ck-send .hint{font-size:10px;color:var(--t3)}
+.send-btn{margin-left:auto;width:26px;height:26px;border-radius:7px;background:var(--acc);
+  color:#052E1C;display:grid;place-items:center;transition:opacity .15s,transform .15s}
+.send-btn:hover{opacity:.9}
+.send-btn:active{transform:scale(.94)}
+.send-btn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;
+  stroke-linecap:round;stroke-linejoin:round}
+
+/* ---------- 8. status bar ---------- */
+.statusbar{background:var(--panel);border-top:1px solid var(--line);display:flex;align-items:center;
+  padding:0 10px 0 8px;gap:14px;font-size:11px;color:var(--t3);user-select:none;z-index:50}
+.sb-item{display:flex;align-items:center;gap:5px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.sb-item.click{cursor:pointer;border-radius:4px;padding:1px 5px}
+.sb-item.click:hover{background:var(--hover);color:var(--t2)}
+.sb-item svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:1.6;
+  stroke-linecap:round;stroke-linejoin:round}
+.sb-acc{color:var(--acc)}
+.sb-warn{color:var(--warn)}
+.sb-dot{width:6px;height:6px;border-radius:50%;background:var(--t3)}
+.sb-dot.ok{background:var(--acc)}
+.sb-dot.live{background:var(--acc);animation:pulse 2s infinite}
+.sb-right{margin-left:auto;display:flex;align-items:center;gap:14px}
+.sb-clock{font-variant-numeric:tabular-nums}
+
+/* ---------- 9. command palette ---------- */
+.pal-back{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;display:none;
+  align-items:flex-start;justify-content:center;padding-top:14vh}
+.pal-back.open{display:flex}
+.pal{width:560px;max-width:calc(100vw - 40px);background:var(--elev);border:1px solid var(--line);
+  border-radius:12px;box-shadow:var(--float-shadow);overflow:hidden;
+  animation:palin .14s ease-out}
+@keyframes palin{from{opacity:0;transform:translateY(-6px) scale(.99)}to{opacity:1;transform:none}}
+.pal-input{display:flex;align-items:center;gap:9px;padding:12px 14px;border-bottom:1px solid var(--line-soft)}
+.pal-input svg{width:14px;height:14px;stroke:var(--t3);fill:none;stroke-width:1.6;stroke-linecap:round}
+.pal-input input{flex:1;background:none;border:0;font-size:13.5px;color:var(--t1)}
+.pal-input input::placeholder{color:var(--t3)}
+.pal-list{max-height:320px;overflow-y:auto;padding:6px}
+.pal-item{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--r);
+  cursor:pointer;color:var(--t2)}
+.pal-item svg{width:15px;height:15px;flex:none;stroke:currentColor;fill:none;stroke-width:1.6;
+  stroke-linecap:round;stroke-linejoin:round;color:var(--t3)}
+.pal-item .pl-label{flex:1;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pal-item .pl-label b{color:var(--t1);font-weight:600}
+.pal-item .pl-hint{font-size:10.5px;color:var(--t3);font-family:var(--mono)}
+.pal-item.sel{background:var(--acc-dim);color:var(--t1)}
+.pal-item.sel svg{color:var(--acc)}
+.pal-empty{padding:18px;text-align:center;color:var(--t3);font-size:12px}
+.pal-foot{display:flex;gap:16px;padding:10px 14px;border-top:1px solid var(--line-soft);
+  font-size:10.5px;color:var(--t3);align-items:center}
+.pal-foot b{color:var(--t2);font-weight:600;font-family:var(--mono)}
+
+/* ---------- 10. responsive ---------- */
+@media (max-width:1366px){:root{--cockpit-w:320px}.app{grid-template-columns:48px 232px minmax(0,1fr) var(--cockpit-w)}}
+@media (max-width:1200px){:root{--cockpit-w:300px}.app{grid-template-columns:48px 216px minmax(0,1fr) var(--cockpit-w)}.minimap{display:none}}
+@media (max-width:1060px){:root{--cockpit-w:0px}.app{grid-template-columns:48px 216px minmax(0,1fr) 0}.cockpit{display:none}}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+
+  <!-- ======== ACTIVITY BAR ======== -->
+  <nav class="activity" id="activity" aria-label="Activity bar"></nav>
+
+  <!-- ======== SIDE PANEL ======== -->
+  <aside class="sidepanel">
+    <div class="sp-head"><span id="spTitle">Explorer</span>
+      <div class="sp-actions" id="spActions"></div>
+    </div>
+    <div class="sp-body" id="spBody"></div>
+  </aside>
+
+  <!-- ======== MAIN COLUMN ======== -->
+  <section class="maincol">
+    <div class="tabbar" id="tabbar"></div>
+
+    <div class="editor-zone">
+      <div class="ed-scroll" id="edScroll">
+        <div class="gutter" id="gutter"></div>
+        <div class="code syntax" id="code" spellcheck="false"></div>
+      </div>
+      <div class="minimap" id="minimap"></div>
+    </div>
+
+    <div class="botpanel" id="botpanel">
+      <div class="bot-head">
+        <button class="bot-tab on" data-bt="terminal">Terminal</button>
+        <button class="bot-tab" data-bt="problems">Problems <span class="cnt">2</span></button>
+        <button class="bot-tab" data-bt="output">Output</button>
+        <button class="bot-tab" data-bt="logs">MCP Logs</button>
+        <div class="bot-end">
+          <button class="bot-ib" id="botClear" data-tip2="Clear terminal" title="Clear terminal">
+            <svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V6"/></svg>
+          </button>
+          <button class="bot-ib" id="botChev" title="Toggle panel">
+            <svg viewBox="0 0 24 24"><path d="M18 15l-6-6-6 6"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="bot-body on" id="bb-terminal"><div class="term" id="term"></div></div>
+      <div class="bot-body" id="bb-problems"><div class="plist" id="plist"></div></div>
+      <div class="bot-body" id="bb-output"><div class="olist" id="olist"></div></div>
+      <div class="bot-body" id="bb-logs"><div class="loglist syntax" id="loglist"></div></div>
+    </div>
+  </section>
+
+  <!-- ======== AI COCKPIT ======== -->
+  <aside class="cockpit" id="cockpit">
+    <div class="ck-head">
+      <div class="ck-title">
+        <h1>AI Cockpit</h1><span class="sub">all providers via MCP</span>
+        <span class="ck-rate"><span class="rdot"></span><span id="tokRate">1,024 tok/s</span></span>
+      </div>
+      <div class="ck-sub2">Hub <span class="ck-hub"><span class="dot ok"></span>127.0.0.1:4620</span> · tunnel <span id="ckTunnel">live</span></div>
+    </div>
+    <div class="ck-tabs" id="ckTabs"></div>
+    <div class="ck-msgs" id="ckMsgs"></div>
+    <div class="ck-composer">
+      <div class="composer">
+        <textarea id="chatIn" rows="1" placeholder="Message Claude — Enter to send, Shift+Enter for a new line"></textarea>
+        <div class="ck-send">
+          <span class="hint">tools require your approval</span>
+          <button class="send-btn" id="sendBtn" title="Send">
+            <svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ======== STATUS BAR ======== -->
+  <footer class="statusbar">
+    <div class="sb-item click" title="Source control">
+      <svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.4"/><circle cx="6" cy="18" r="2.4"/><circle cx="18" cy="8" r="2.4"/><path d="M6 8.4v7.2M18 10.4c0 3-2.6 4.1-6 4.6"/></svg>
+      <span>main</span>
+    </div>
+    <div class="sb-item"><span class="sb-acc">✓ 0</span><span class="sb-warn">△ 2</span></div>
+    <div class="sb-item click" id="sbMcp"><span class="sb-dot ok"></span><span id="sbMcpTxt">MCP: 5 servers · 38 tools</span></div>
+    <div class="sb-item click" id="sbTunnel"><span class="sb-dot live" id="sbTunnelDot"></span><span id="sbTunnelTxt">Tunnel: LIVE</span></div>
+    <div class="sb-right">
+      <div class="sb-item" id="sbPos">Ln 42, Col 8</div>
+      <div class="sb-item">Spaces: 2</div>
+      <div class="sb-item">UTF-8</div>
+      <div class="sb-item" id="sbPerf">CPU 12% · RAM 41%</div>
+      <div class="sb-item sb-clock" id="sbClock">--:--</div>
+    </div>
+  </footer>
+</div>
+
+<!-- ======== COMMAND PALETTE ======== -->
+<div class="pal-back" id="palBack">
+  <div class="pal" role="dialog" aria-label="Command palette">
+    <div class="pal-input">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input id="palIn" placeholder="Type a command…" spellcheck="false" autocomplete="off">
+    </div>
+    <div class="pal-list" id="palList"></div>
+    <div class="pal-foot"><span><b>↑↓</b> navigate</span><span><b>⏎</b> run</span><span><b>esc</b> close</span></div>
+  </div>
+</div>
+
+<script>
+(function(){
+'use strict';
+
+/* ============================================================
+   helpers
+============================================================ */
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const fmt = n => n.toLocaleString('en-US');
+const rnd = (a,b) => a + Math.random()*(b-a);
+const ri  = (a,b) => Math.round(rnd(a,b));
+const pad = n => String(n).padStart(2,'0');
+const clamp = (v,a,b) => Math.min(b,Math.max(a,v));
+
+/* ============================================================
+   data — project files
+============================================================ */
+const FILES = {
+'mcp.json': `{
+  "$schema": "https://prism.dev/schemas/hub-config-v1.json",
+  "hub": {
+    "name": "prism",
+    "version": "1.4.2",
+    "host": "127.0.0.1",
+    "port": 4620,
+    "logLevel": "info",
+    "telemetry": false
+  },
+  "servers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "~/nova-api"],
+      "tools": 12,
+      "enabled": true
+    },
+    "git": {
+      "command": "prism",
+      "args": ["mcp", "git", "--repo", "~/nova-api"],
+      "tools": 7,
+      "enabled": true
+    },
+    "shell": {
+      "command": "prism",
+      "args": ["mcp", "shell", "--sandbox", "strict"],
+      "tools": 4,
+      "enabled": true
+    },
+    "rea": {
+      "command": "npx",
+      "args": ["-y", "rea-agents", "mcp"],
+      "tools": 9,
+      "enabled": true
+    },
+    "browser": {
+      "command": "npx",
+      "args": ["-y", "@prism/browser-mcp", "--headless"],
+      "tools": 6,
+      "enabled": true,
+      "note": "degraded — chromium sandbox restart scheduled"
+    }
+  },
+  "providers": {
+    "claude":  { "model": "claude-sonnet-4.5", "via": "mcp" },
+    "gpt":     { "model": "gpt-5.1-codex",     "via": "mcp" },
+    "gemini":  { "model": "gemini-3-pro",      "via": "mcp" },
+    "glm":     { "model": "glm-4.7",           "via": "mcp" }
+  },
+  "tunnel": {
+    "provider": "cloudflare",
+    "hostname": "prism.eddydev.io",
+    "access": "cloudflare-access",
+    "mfa": true
+  }
+}`,
+
+'src/server.ts': `// server.ts — nova-api entrypoint
+import { createServer } from "node:http";
+import { Engine } from "./engine";
+import { routes } from "./routes";
+import { McpHub } from "./lib/mcp";
+import { logger } from "./lib/logger";
+
+const PORT = Number(process.env.PORT ?? 4620);
+
+export async function main(): Promise<void> {
+  const hub = new McpHub({
+    name: "prism",
+    servers: ["filesystem", "git", "shell", "rea", "browser"]
+  });
+
+  const engine = new Engine({ hub, timeoutMs: 5000 });
+  const server = createServer((req, res) => {
+    const handler = routes[req.method ?? "GET"];
+    if (!handler) {
+      res.writeHead(405).end();
+      return;
+    }
+    try {
+      handler(req, res, engine);
+    } catch (err) {
+      logger.error("request failed", err);
+      res.writeHead(500).end("internal error");
+    }
+  });
+
+  hub.start(); // engine.ts:94 expects this awaited
+  server.listen(PORT, "127.0.0.1", () => {
+    logger.info("nova-api listening on :" + PORT);
+  });
+}
+
+main();`,
+
+'src/engine.ts': `// engine.ts — core request engine for nova-api
+import { McpHub, type ToolResult } from "./lib/mcp";
+import { logger } from "./lib/logger";
+
+export interface EngineOptions {
+  hub: McpHub;
+  timeoutMs?: number;
+  retries?: number;
+}
+
+const DEFAULT_TIMEOUT = 5000;
+
+export class Engine {
+  private inflight = new Map<string, number>();
+  private hub: McpHub;
+  private timeoutMs: number;
+  private static seq = 0;
+
+  constructor(opts: EngineOptions) {
+    this.hub = opts.hub;
+    this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT;
+  }
+
+  // Dispatch a tool call through the MCP hub.
+  async call(tool: string, args: Record<string, unknown>): Promise<ToolResult> {
+    const id = ++Engine.seq;
+    this.inflight.set(tool, id);
+    try {
+      return await this.hub.call(tool, args);
+    } catch (err) {
+      logger.warn("tool call failed", tool, err);
+      return { ok: false, error: String(err) };
+    } finally {
+      this.inflight.delete(tool);
+    }
+  }
+
+  async scanWorkspace(): Promise<number> {
+    const res = await this.call("fs.tree", { depth: 4 });
+    if (!res.ok) return 0;
+    return res.files.length;
+  }
+}`,
+
+'src/routes.ts': `// routes.ts — minimal router table
+import type { Engine } from "./engine";
+
+type Handler = (req: any, res: any, engine: Engine) => void;
+
+export const routes: Record<string, Handler> = {
+  GET: (req, res, engine) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ ok: true, tools: 38 }));
+  },
+  POST: (req, res, engine) => {
+    engine.call("fs.read", { path: "README.md" });
+    res.writeHead(202).end();
+  }
+};`,
+
+'lib/mcp.ts': `// mcp.ts — thin client for the local MCP hub
+export interface ToolResult {
+  ok: boolean;
+  files?: { path: string }[];
+  error?: string;
+  ms?: number;
+}
+
+const HUB = "http://127.0.0.1:4620";
+
+export class McpHub {
+  constructor(readonly opts: { name: string; servers: string[] }) {}
+
+  async listTools(): Promise<string[]> {
+    const res = await fetch(HUB + "/tools/list");
+    const json: any = await res.json();
+    return json.tools.map((t: any) => t.name);
+  }
+
+  async call(tool: string, args: unknown): Promise<ToolResult> {
+    const t0 = performance.now();
+    const res = await fetch(HUB + "/tools/call", {
+      method: "POST",
+      body: JSON.stringify({ tool, args })
+    });
+    return { ok: res.ok, ms: Math.round(performance.now() - t0) };
+  }
+}`,
+
+'lib/logger.ts': `// logger.ts — leveled logger with ms stamps
+type Level = "info" | "warn" | "error";
+
+const color: Record<Level, string> = {
+  info: "\\x1b[36m",
+  warn: "\\x1b[33m",
+  error: "\\x1b[31m"
+};
+
+export const logger = {
+  log(level: Level, msg: string, ...rest: unknown[]) {
+    const ts = new Date().toISOString().slice(11, 23);
+    console.log(color[level] + ts + " " + msg + "\\x1b[0m", ...rest);
+  },
+  info: (m: string, ...r: unknown[]) => logger.log("info", m, ...r),
+  warn: (m: string, ...r: unknown[]) => logger.log("warn", m, ...r),
+  error: (m: string, ...r: unknown[]) => logger.log("error", m, ...r)
+};`,
+
+'scripts/deploy.sh': `#!/usr/bin/env bash
+# deploy.sh — build nova-api and restart the prism hub service
+set -euo pipefail
+
+npm run build
+prism mcp reload --hub 127.0.0.1:4620
+sudo systemctl restart nova-api.service
+
+echo "deployed — tunnel prism.eddydev.io still live"`,
+
+'scripts/scan.sh': `#!/usr/bin/env bash
+# scan.sh — quick workspace audit via the rea server
+set -euo pipefail
+
+rea analyze ./src --profile nova-api
+rea report --format md > .prism/last-scan.md
+echo "scan written to .prism/last-scan.md"`,
+
+'tests/engine.test.ts': `// engine.test.ts — engine.call behaviour
+import { describe, it, expect } from "vitest";
+import { Engine } from "../src/engine";
+
+describe("Engine.call", () => {
+  it("resolves with an ok result", async () => {
+    const engine = new Engine({ hub: makeHub() });
+    const res = await engine.call("fs.stat", { path: "README.md" });
+    expect(res.ok).toBe(true);
+  });
+});
+
+function makeHub(): any {
+  return { call: async () => ({ ok: true, ms: 4 }) };
+}`,
+
+'package.json': `{
+  "name": "nova-api",
+  "version": "1.4.2",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "scan": "bash scripts/scan.sh"
+  },
+  "dependencies": {
+    "mcp-hub": "^1.4.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.1",
+    "tsx": "^4.19.0"
+  }
+}`,
+
+'README.md': `# nova-api
+
+A small, fast API service wired into the **Prism** MCP hub.
+Every tool below is exposed to every connected provider — Claude,
+GPT, Gemini and GLM — through one authenticated endpoint.
+
+## Quick start
+
+    npm install
+    npm run dev          # starts the hub on 127.0.0.1:4620
+    prism tunnel up      # expose it via prism.eddydev.io
+
+## Layout
+
+- src/ — server + engine
+- lib/ — MCP client and logger
+- scripts/ — deploy and scan helpers
+- tests/ — vitest suite
+
+## Notes
+
+The hub aggregates 5 servers (filesystem, git, shell, rea, browser)
+for a total of 38 tools. Cloudflare Access enforces MFA on every
+request that arrives through the tunnel.
+
+> Tip: run \`scan\` in the Prism terminal before every deploy.`
+};
+
+const TREE = [
+  {dir:true, name:'src', open:true, kids:['src/server.ts','src/engine.ts','src/routes.ts']},
+  {dir:true, name:'lib', open:true, kids:['lib/mcp.ts','lib/logger.ts']},
+  {dir:true, name:'scripts', open:false, kids:['scripts/deploy.sh','scripts/scan.sh']},
+  {dir:true, name:'tests', open:false, kids:['tests/engine.test.ts']},
+  {file:'mcp.json'},
+  {file:'package.json'},
+  {file:'README.md'}
+];
+const GIT_DIRTY = {'mcp.json':'M','src/server.ts':'M','src/engine.ts':'M'};
+
+/* mcp servers */
+const SERVERS = [
+  {id:'filesystem', ver:'0.9.4', tools:['fs.read','fs.write','fs.patch','fs.list','fs.tree','fs.search','fs.stat','fs.move','fs.watch','fs.glob','fs.grep','fs.diff'], toolDesc:'read, write, patch and watch workspace files', lat:8,  status:'ok'},
+  {id:'git',        ver:'1.2.0', tools:['git.status','git.diff','git.log','git.commit','git.branch','git.stage','git.push'], toolDesc:'working-tree inspection and branch operations', lat:12, status:'ok'},
+  {id:'shell',      ver:'1.1.6', tools:['shell.exec','shell.spawn','shell.kill','shell.env'], toolDesc:'sandboxed command execution with strict policy', lat:24, status:'ok'},
+  {id:'rea',        ver:'6.7.0', tools:['rea.analyze','rea.decompile','rea.strings','rea.trace','rea.hooks','rea.symbols','rea.graph','rea.unpack','rea.report'], toolDesc:'reverse-engineering toolkit for binaries and bundles', lat:31, status:'ok'},
+  {id:'browser',    ver:'0.3.1', tools:['br.navigate','br.click','br.type','br.screenshot','br.pdf','br.eval'], toolDesc:'headless chromium automation session', lat:45, status:'warn', note:'degraded — sandbox restart scheduled'}
+];
+
+/* providers & conversations */
+const PROVIDERS = [
+  {id:'claude', name:'Claude', color:'#D97757'},
+  {id:'gpt',    name:'GPT',    color:'#10A37F'},
+  {id:'gemini', name:'Gemini', color:'#8B5CF6'},
+  {id:'glm',    name:'GLM',    color:'#38BDF8'}
+];
+
+const chip = (label, state, json, ms) => ({label, state, json, ms: ms || null});
+
+const CONVO_INIT = {
+  claude: [
+    {who:'ai', time:'14m', text:'Scanned nova-api. The MCP filesystem server indexed 214 files in 1.2s. engine.ts:94 has an unhandled promise — want me to fix it?',
+     chips:[chip('fs.read · engine.ts','approved',{tool:'fs.read',server:'filesystem',args:{path:'src/engine.ts',range:'80-110'},result:{bytes:4211,lines:96,sha256:'b7e24c…9f31'}},8)]},
+    {who:'ai', time:'just now', text:'Running the test suite to confirm the failure before touching code. This will take about 3 seconds.',
+     chips:[chip('shell.exec · npm test','pending',{tool:'shell.exec',server:'shell',args:{cmd:'npm test',cwd:'~/nova-api'},result:{exit:1,passed:41,failed:1,ms:3184}})]}
+  ],
+  gpt: [
+    {who:'ai', time:'26m', text:'Diff on main is clean. I can draft the tunnel bootstrap for prism.eddydev.io — cloudflared ingress plus a scoped Access policy, 3 commands total.',
+     chips:[chip('shell.exec · cloudflared tunnel run','approved',{tool:'shell.exec',server:'shell',args:{cmd:'cloudflared tunnel run prism'},result:{exit:0,connector:'hedgehog-ord01',ms:212}},212)]}
+  ],
+  gemini: [
+    {who:'ai', time:'1h', text:'Indexed nova-api with embeddings (214 files). server.ts imports engine.ts but never awaits hub.start() — that is your △2 in Problems.',
+     chips:[chip('rea.analyze · server.ts','approved',{tool:'rea.analyze',server:'rea',args:{target:'src/server.ts',profile:'nova-api'},result:{findings:2,severity:'low',score:'A-'}},612)]}
+  ],
+  glm: [
+    {who:'ai', time:'8m', text:'GLM connected through the MCP hub at 127.0.0.1:4620. Round-trip 182 ms via the office-pc client. Ready to pair on nova-api.',
+     chips:[chip('git.status · nova-api','approved',{tool:'git.status',server:'git',args:{repo:'~/nova-api'},result:{branch:'main',changed:3,ahead:0}},12)]}
+  ]
+};
+
+const CANNED = {
+  claude: [
+    {text:'Reading src/engine.ts around line 94 — the promise from hub.call() is never awaited. I would wrap it in try/catch and re-throw typed. Applying the patch after your approval.', chip:chip('fs.patch · engine.ts','pending',{tool:'fs.patch',server:'filesystem',args:{path:'src/engine.ts',hunk:'94,97'},result:{added:3,removed:1}})},
+    {text:'Tests: 41 passing, 2 skipped, 1 failing (engine.test.ts:12). The failure matches the unhandled rejection. Suggest we fix it before the tunnel demo.', chip:chip('shell.exec · npm test','pending',{tool:'shell.exec',server:'shell',args:{cmd:'npm test'},result:{exit:1,passed:41,failed:1}})},
+    {text:'I would extract the retry logic into lib/mcp.ts and reuse it for the git server — smaller blast radius, same behavior. Want the diff?', chip:chip('fs.write · lib/mcp.ts','pending',{tool:'fs.write',server:'filesystem',args:{path:'lib/mcp.ts'},result:{bytes:2140,mode:'overwrite'}})}
+  ],
+  gpt: [
+    {text:'Drafting a codex patch: 3 files touched (engine.ts, mcp.ts, engine.test.ts), estimated +14/−6. I will run the test matrix via shell.exec before proposing it.', chip:chip('shell.exec · npm run test:matrix','pending',{tool:'shell.exec',server:'shell',args:{cmd:'npm run test:matrix'},result:{exit:0,variants:4,ms:9410}})},
+    {text:'Tunnel plan: cloudflared ingress to 127.0.0.1:4620, Access app scoped to @eddydev.io with MFA, cert rotation every 24 h. Want the config?', chip:chip('fs.write · tunnel.yml','pending',{tool:'fs.write',server:'filesystem',args:{path:'~/.cloudflared/tunnel.yml'},result:{bytes:318,mode:'create'}})},
+    {text:'Benchmarked hub.call() at p95 8.4 ms across 38 tools. The browser server accounts for the outliers — consider a 500 ms timeout there.', chip:chip('rea.analyze · browser','pending',{tool:'rea.analyze',server:'rea',args:{target:'@prism/browser-mcp'},result:{p50:4,p95:44,ms:640}})}
+  ],
+  gemini: [
+    {text:'Semantic search over nova-api: “unhandled promise” hits engine.ts:94 and two call sites in routes.ts. I can queue fixes with fs.patch.', chip:chip('fs.patch · routes.ts','pending',{tool:'fs.patch',server:'filesystem',args:{path:'src/routes.ts',hunk:'15,19'},result:{added:2,removed:2}})},
+    {text:'Cross-referenced git history: engine.ts changed 4 days ago (commit 9f31c2a). The regression almost certainly came from that refactor.', chip:chip('git.log · engine.ts','pending',{tool:'git.log',server:'git',args:{path:'src/engine.ts',n:5},result:{commits:5,last:'9f31c2a'}})},
+    {text:'I can watch the filesystem server and re-index on save — incremental, about 40 ms per change. Enable it?', chip:chip('fs.watch · nova-api','pending',{tool:'fs.watch',server:'filesystem',args:{glob:'**/*.ts'},result:{watching:14,debounce:120}})}
+  ],
+  glm: [
+    {text:'GLM sees 38 tools across 5 servers. Suggest caching tools/list per session — saves roughly 120 ms on every provider handshake.', chip:chip('mcp.call · tools/list','pending',{tool:'mcp.call',server:'hub',args:{method:'tools/list'},result:{cached:true,ttl:3600}})},
+    {text:'office-pc is linked at 182 ms RTT. I can route heavy rea.analyze jobs there to keep your CPU under 15%.', chip:chip('shell.exec · renice','pending',{tool:'shell.exec',server:'shell',args:{cmd:'renice -n 10 -p $(pgrep rea)'},result:{exit:0,affected:2}})},
+    {text:'Drafted a bilingual zh/en changelog entry for nova-api v1.4.2. Review it via fs.read?', chip:chip('fs.read · CHANGELOG.md','pending',{tool:'fs.read',server:'filesystem',args:{path:'CHANGELOG.md'},result:{bytes:1877,lines:44}})}
+  ]
+};
+
+/* ============================================================
+   state
+============================================================ */
+const state = {
+  view:'explorer',
+  tabs:['mcp.json','src/server.ts','src/engine.ts','README.md'],
+  activeTab:'mcp.json',
+  cursor:{line:42,col:8},
+  scrollPos:{},
+  botTab:'terminal',
+  botCollapsed:false,
+  cockpitHidden:false,
+  tunnelUp:true,
+  tunnelSince:Date.now()-((5*86400+3*3600+42*60+11)*1000),
+  tunnelBase:(5*86400+3*3600+42*60+11),
+  servers:SERVERS.map(s=>({...s,enabled:true})),
+  providers:PROVIDERS.map(p=>({id:p.id,name:p.name,color:p.color,replyIdx:0,
+    msgs:CONVO_INIT[p.id].map(m=>({...m}))})),
+  activeProvider:'claude',
+  termHist:[], termHistIdx:-1, termBuf:'',
+  settings:{confirmCalls:true,autoRO:false,streamLogs:true,telemetry:false},
+  cpu:12, ram:41, tok:1024, tokTarget:1024,
+  spark:[]
+};
+
+/* ============================================================
+   syntax highlighter (per-line, hand-rolled)
+============================================================ */
+const RX_TS = /(\/\/.*$)|(`[^`]*`|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|\b(const|let|var|function|return|if|else|for|while|do|import|export|from|default|async|await|new|class|extends|implements|interface|type|enum|try|catch|finally|throw|typeof|instanceof|in|of|switch|case|break|continue|this|null|undefined|true|false|void|readonly|private|public|static|as)\b|(\b\d[\d_]*(?:\.\d+)?\b)|([A-Za-z_$][\w$]*)(?=\s*\()|\b([A-Z][\w$]*)\b/g;
+const RX_JSON = /("(?:[^"\\]|\\.)*")(\s*:)?|(-?\b\d[\d_]*(?:\.\d+)?(?:[eE][+-]?\d+)?\b)|\b(true|false|null)\b/g;
+const RX_SH = /(#.*$)|("(?:[^"\\]|\\.)*"|'[^']*')|(\s--?[a-zA-Z-]+)|(\$[A-Za-z_]\w*)/g;
+const RX_MD_IN = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\[[^\]]+\]\([^)]*\))/g;
+
+function hlLine(line, lang){
+  const s = esc(line);
+  if(lang==='json'){
+    return s.replace(RX_JSON,(m,str,col,num,bool)=>{
+      if(str) return col ? '<span class="key">'+str+'</span><span class="pn">'+col+'</span>' : '<span class="st">'+str+'</span>';
+      if(num) return '<span class="num">'+num+'</span>';
+      if(bool) return '<span class="num">'+bool+'</span>';
+      return m;
+    });
+  }
+  if(lang==='md'){
+    let out = s;
+    if(/^\s*#{1,6}\s/.test(line)) return '<span class="hd">'+out+'</span>';
+    if(/^\s*>\s?/.test(line)) return '<span class="cm">'+out+'</span>';
+    if(/^ {4,}/.test(line)) return '<span class="st">'+out+'</span>';
+    out = out.replace(/^(\s*)([-*])\s/,'$1<span class="bt">$2</span> ');
+    out = out.replace(RX_MD_IN,(m,code,bold,link)=>{
+      if(code) return '<span class="st">'+code+'</span>';
+      if(bold) return '<span class="hd">'+bold+'</span>';
+      if(link) return '<span class="lk">'+link+'</span>';
+      return m;
+    });
+    return out;
+  }
+  if(lang==='sh'){
+    return s.replace(RX_SH,(m,cm,st,flag,vr)=>{
+      if(cm) return '<span class="cm">'+cm+'</span>';
+      if(st) return '<span class="st">'+st+'</span>';
+      if(flag) return '<span class="kw">'+flag+'</span>';
+      if(vr) return '<span class="num">'+vr+'</span>';
+      return m;
+    });
+  }
+  /* typescript (default) */
+  return s.replace(RX_TS,(m,cm,st,kw,num,fn,ty)=>{
+    if(cm) return '<span class="cm">'+cm+'</span>';
+    if(st) return '<span class="st">'+st+'</span>';
+    if(kw) return '<span class="kw">'+kw+'</span>';
+    if(num) return '<span class="num">'+num+'</span>';
+    if(fn) return '<span class="fn">'+fn+'</span>';
+    if(ty) return '<span class="ty">'+ty+'</span>';
+    return m;
+  });
+}
+const langOf = f => f.endsWith('.json')?'json':f.endsWith('.md')?'md':f.endsWith('.sh')?'sh':'ts';
+
+/* ============================================================
+   icons
+============================================================ */
+const I = {
+  logo:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L21 19H3z"/><path d="M12 3v16" opacity=".45"/><path d="M12 19l7-12" opacity=".45"/></svg>',
+  explorer:'<svg class="act-ic" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>',
+  search:'<svg class="act-ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>',
+  scm:'<svg class="act-ic" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.4"/><circle cx="6" cy="18" r="2.4"/><circle cx="18" cy="8" r="2.4"/><path d="M6 8.4v7.2M18 10.4c0 3-2.6 4.1-6 4.6"/></svg>',
+  mcp:'<svg class="act-ic" viewBox="0 0 24 24"><rect x="3" y="9" width="6" height="6" rx="1.5"/><rect x="15" y="4" width="6" height="6" rx="1.5"/><rect x="15" y="14" width="6" height="6" rx="1.5"/><path d="M9 12h3.5M12.5 12V7H15M12.5 12v5H15"/></svg>',
+  cockpit:'<svg class="act-ic" viewBox="0 0 24 24"><path d="M12 4l1.7 4.6L18 10l-4.3 1.4L12 16l-1.7-4.6L6 10l4.3-1.4z"/><path d="M18.5 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"/></svg>',
+  tunnel:'<svg class="act-ic" viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 16 0"/><path d="M8 12a4 4 0 0 1 8 0"/><path d="M12 12v9"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/></svg>',
+  settings:'<svg class="act-ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55h.01a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></svg>',
+  chev:'<svg class="chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>',
+  lock:'<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>',
+  send:'<svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg>',
+  chipTool:'<svg class="chip-ic" viewBox="0 0 24 24"><path d="M14.7 6.3a4.5 4.5 0 0 0-6 5.6L3 17.6V21h3.4l5.7-5.7a4.5 4.5 0 0 0 5.6-6l-3 3-2.4-.6-.6-2.4z"/></svg>',
+  cmd:'<svg viewBox="0 0 24 24"><path d="M5 9l-3 3 3 3M9 5l3-3 3 3M19 9l3 3-3 3M9 19l3 3 3-3M10 10h4v4h-4z" transform="scale(.92) translate(1 1)"/></svg>',
+  fileIc:'<svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>'
+};
+
+/* ============================================================
+   module: activity bar
+============================================================ */
+const ACT_ITEMS = [
+  {id:'explorer', tip:'Explorer · ⌃⇧E'},
+  {id:'search', tip:'Search'},
+  {id:'scm', tip:'Source Control', badge:'3'},
+  {id:'mcp', tip:'MCP Hub · 38 tools', dot:true},
+  {id:'cockpit', tip:'AI Cockpit'},
+  {id:'tunnel', tip:'Tunnel'},
+  {id:'settings', tip:'Settings'}
+];
+function renderActivity(){
+  const nav = $('#activity');
+  nav.innerHTML =
+    '<div class="act-logo" data-tip="Prism — one cockpit">'+I.logo+'</div>'
+    + ACT_ITEMS.map(it=>{
+        const on = (state.view===it.id) || (it.id==='cockpit' && !state.cockpitHidden && state.view!=='cockpit');
+        const cls = 'act-btn' + ((it.id!=='cockpit' && state.view===it.id) ? ' on' : (it.id==='cockpit' && !state.cockpitHidden ? ' on' : ''));
+        return '<button class="'+cls+'" data-act="'+it.id+'" data-tip="'+it.tip+'">'
+          + I[it.id]
+          + (it.badge ? '<span class="act-badge">'+it.badge+'</span>' : '')
+          + (it.dot ? '<span class="act-dot"></span>' : '')
+          + '</button>';
+      }).join('')
+    + '<div class="act-spacer"></div>'
+    + '<div class="act-avatar" data-tip="Edison Flores · local">EF</div>';
+  nav.querySelectorAll('[data-act]').forEach(b=>{
+    b.addEventListener('click',()=>onActivity(b.dataset.act));
+  });
+}
+function onActivity(id){
+  if(id==='cockpit'){ toggleCockpit(); return; }
+  state.view = id;
+  renderActivity(); renderPanel();
+}
+
+/* ============================================================
+   module: side panel
+============================================================ */
+const VIEW_TITLES = {explorer:'Explorer',search:'Search',scm:'Source Control',mcp:'MCP Hub',tunnel:'Tunnel',settings:'Settings'};
+
+function renderPanel(){
+  $('#spTitle').textContent = VIEW_TITLES[state.view] || state.view;
+  const body = $('#spBody');
+  if(state.view==='explorer') body.innerHTML = tplExplorer();
+  else if(state.view==='search') body.innerHTML = tplSearch();
+  else if(state.view==='scm') body.innerHTML = tplScm();
+  else if(state.view==='mcp') body.innerHTML = tplMcp();
+  else if(state.view==='tunnel') body.innerHTML = tplTunnel();
+  else body.innerHTML = tplSettings();
+  wirePanel();
+}
+
+/* ---- explorer ---- */
+function tplExplorer(){
+  let h = '<div class="proj-row">'+I.chev+'<span>nova-api</span><span class="crumb">— ~/nova-api</span></div>';
+  for(const node of TREE){
+    if(node.dir){
+      h += '<div class="tree-dir'+(node.open?' open':'')+'" data-dir="'+node.name+'">'+I.chev
+        +  '<span>'+node.name+'</span></div><div class="tree-kids"'+(node.open?'':' style="display:none"')+'>'
+        +  node.kids.map(f=>fileRow(f,14)).join('')
+        +  '</div>';
+    } else {
+      h += fileRow(node.file,0);
+    }
+  }
+  return h;
+}
+function fileRow(path, indent){
+  const name = path.split('/').pop();
+  const ext = name.split('.').pop();
+  const cls = ext==='ts'?'fi-ts':ext==='json'?'fi-json':ext==='md'?'fi-md':ext==='sh'?'fi-sh':'';
+  const tag = ext==='ts'?'TS':ext==='json'?'{}':ext==='md'?'MD':ext==='sh'?'SH':ext.toUpperCase().slice(0,2);
+  const active = state.activeTab===path ? ' active' : '';
+  const dirty = GIT_DIRTY[path] ? '<span class="gitmark">'+GIT_DIRTY[path]+'</span>' : '';
+  return '<div class="tree-file'+active+'" data-file="'+path+'" style="padding-left:'+(18+indent)+'px">'
+    + '<span class="f-ic '+cls+'">'+tag+'</span><span class="tree-name">'+name+'</span>'+dirty+'</div>';
+}
+
+/* ---- search ---- */
+function tplSearch(){
+  return '<div class="search-wrap"><div class="search-box">'
+    + '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>'
+    + '<input id="searchIn" placeholder="Search files and lines…" spellcheck="false" autocomplete="off"></div></div>'
+    + '<div id="searchOut"><div class="sr-empty">Search across all 11 files in nova-api.<br>Try “promise”, “tunnel” or “fs.read”.</div></div>';
+}
+const SEARCH_INDEX = [];
+Object.keys(FILES).forEach(f=>{
+  FILES[f].split('\n').forEach((line,i)=>{
+    if(line.trim()) SEARCH_INDEX.push({file:f, n:i+1, text:line});
+  });
+});
+function runSearch(q){
+  const out = $('#searchOut'); if(!out) return;
+  q = q.trim();
+  if(!q){ out.innerHTML = '<div class="sr-empty">Search across all 11 files in nova-api.<br>Try “promise”, “tunnel” or “fs.read”.</div>'; return; }
+  const lq = q.toLowerCase();
+  const fileHits = Object.keys(FILES).filter(f=>f.toLowerCase().includes(lq));
+  const lineHits = SEARCH_INDEX.filter(r=>r.text.toLowerCase().includes(lq)).slice(0,30);
+  let h = '<div class="search-count tnum">'+(fileHits.length+lineHits.length)+' results · '+fileHits.length+' files by name, '+lineHits.length+' lines</div>';
+  if(fileHits.length){
+    h += '<div class="sr-group">'+fileHits.map(f=>
+      '<div class="sr-file" data-open="'+f+'" style="cursor:pointer">'+I.fileIc.replace('<svg','<svg width=13 height=13')+'<span>'+hlMark(f,q)+'</span></div>').join('')+'</div>';
+  }
+  let lastFile = null;
+  for(const r of lineHits){
+    if(r.file!==lastFile){
+      h += '<div class="sr-group"><div class="sr-file">'+r.file+'<span class="cnt">'+SEARCH_INDEX.filter(x=>x.file===r.file&&x.text.toLowerCase().includes(lq)).length+' hits</span></div>';
+      lastFile = r.file;
+    }
+    h += '<div class="sr-line" data-open="'+r.file+'" data-line="'+r.n+'"><span class="ln">'+r.n+'</span>'+hlMark(esc(r.text.trim()),q)+'</div>';
+  }
+  if(!fileHits.length && !lineHits.length) h += '<div class="sr-empty">No results for “'+esc(q)+'”.</div>';
+  out.innerHTML = h;
+  out.querySelectorAll('[data-open]').forEach(el=>{
+    el.addEventListener('click',()=>{
+      openTab(el.dataset.open);
+      if(el.dataset.line) jumpToLine(+el.dataset.line);
+    });
+  });
+}
+function hlMark(text,q){
+  const i = text.toLowerCase().indexOf(q.toLowerCase());
+  if(i<0) return esc(text);
+  return esc(text.slice(0,i))+'<mark>'+esc(text.slice(i,i+q.length))+'</mark>'+esc(text.slice(i+q.length));
+}
+
+/* ---- source control ---- */
+function tplScm(){
+  const dirty = Object.keys(GIT_DIRTY);
+  return '<div class="scm-box"><input placeholder="Commit message…" spellcheck="false">'
+    + '<button class="scm-commit">'+I.chev.replace('class="chev"','')+' Commit — 3 staged changes</button></div>'
+    + '<div class="scm-hint">ON BRANCH main · 1 ahead of origin</div>'
+    + dirty.map(f=>fileRow(f,0)).join('');
+}
+
+/* ---- mcp hub ---- */
+function tplMcp(){
+  const on = state.servers.filter(s=>s.enabled);
+  const tools = on.reduce((a,s)=>a+s.tools.length,0);
+  let h = '<div class="mcp-hd">MCP Hub · <b>'+on.length+' servers</b> · <b>'+tools+' tools</b> · hub 127.0.0.1:4620</div>';
+  h += state.servers.map(s=>{
+    const st = !s.enabled ? 'off' : s.status;
+    return '<div class="mcp-row'+(st==='off'?' off':'')+'" data-srv="'+s.id+'">'
+      + '<span class="dot '+st+'"></span>'
+      + '<div class="mcp-info"><div class="mcp-name">'+s.id+' <span class="ver">v'+s.ver+'</span></div>'
+      + '<div class="mcp-sub tnum">'+s.tools.length+' tools · <span class="lat">'+(s.enabled? 'avg '+s.lat+'ms' : 'offline')+'</span>'
+      + (s.enabled && s.note ? ' · <span class="t-warn" style="color:var(--warn)">'+s.note.split('—')[1].trim()+'</span>' : '')+'</div></div>'
+      + '<label class="switch"><input type="checkbox" data-toggle="'+s.id+'"'+(s.enabled?' checked':'')+'><i></i></label>'
+      + '</div>';
+  }).join('');
+  h += '<div class="mcp-hd" style="margin-top:8px">Each provider reaches these servers through one authenticated endpoint. Tool calls from cloud providers require local approval.</div>';
+  return h;
+}
+
+/* ---- tunnel ---- */
+function tplTunnel(){
+  const up = state.tunnelUp;
+  const clients = [
+    {name:'Claude', color:'var(--p-claude)', where:'cloud', lat:'64ms'},
+    {name:'GPT', color:'var(--p-gpt)', where:'cloud', lat:'81ms'},
+    {name:'GLM', color:'var(--p-glm)', where:'office-pc', lat:'182ms'}
+  ];
+  return '<div class="tun-card">'
+    + '<div class="tun-top"><span class="dot '+(up?'ok':'')+'" style="'+(up?'':'background:var(--t3)')+'"></span>'
+    + '<span class="tun-title">Cloudflare Tunnel</span>'
+    + '<span class="tun-chip '+(up?'live':'off')+'">'+(up?'ACTIVE':'OFFLINE')+'</span></div>'
+    + '<div class="tun-host">'+(up?'prism.eddydev.io':'hostname idle — run “tunnel up”')+'</div>'
+    + '<div class="tun-stats">'
+    + '<div class="tun-stat"><div class="k">Uptime</div><div class="v" id="tunUptime">'+tunUptimeStr()+'</div></div>'
+    + '<div class="tun-stat"><div class="k">Bandwidth</div><div class="v" id="tunBw">'+(up?'112 KB/s':'0 KB/s')+'</div></div>'
+    + '<div class="tun-stat"><div class="k">Clients</div><div class="v">'+(up?clients.length:'0')+'</div></div>'
+    + '</div>'
+    + '<div class="tun-spark"><svg viewBox="0 0 100 30" preserveAspectRatio="none">'
+    + '<path id="sparkFill" fill="rgba(16,185,129,.09)" d=""></path>'
+    + '<polyline id="sparkLine" fill="none" stroke="'+(up?'#10B981':'#3F3F46')+'" stroke-width="1.4" points="" vector-effect="non-scaling-stroke"/></svg></div>'
+    + '<div class="tun-clients" id="tunClients">'+clients.map(c=>
+        '<div class="tun-cl'+(up?'':' off')+'"><span class="cdot" style="background:'+c.color+'"></span>'
+        + '<span>'+c.name+'</span><span class="where">'+c.where+' · '+c.lat+'</span></div>').join('')+'</div>'
+    + '<div class="tun-sec">'+I.lock+'<span>Zero-trust · Cloudflare Access · MFA enforced</span></div>'
+    + '</div>'
+    + '<div class="tun-alt" id="tunAlt"><div class="tun-alt-h" id="tunAltH">'+I.chev
+    + '<span>Tailscale — private mesh alternative</span></div>'
+    + '<div class="tun-alt-b">'
+    + '<div class="tun-dev">prism<span class="st">this device · idle</span></div>'
+    + '<div class="tun-dev">office-pc<span class="st">idle</span></div>'
+    + '<div class="tun-dev">phone-edison<span class="st">idle</span></div>'
+    + '</div></div>'
+    + '<div class="tun-note">Both paths terminate at the local hub — no inbound ports are ever opened on this machine.</div>';
+}
+function tunUptimeStr(){
+  if(!state.tunnelUp) return '—';
+  const s = Math.floor(state.tunnelBase + (Date.now()-state.tunnelSince)/1000);
+  const d = Math.floor(s/86400), h = Math.floor(s%86400/3600), m = Math.floor(s%3600/60), ss = s%60;
+  return d+'d '+pad(h)+':'+pad(m)+':'+pad(ss);
+}
+function tickTunnelView(){
+  const el = $('#tunUptime'); if(el) el.textContent = tunUptimeStr();
+  const bw = $('#tunBw');
+  if(bw && state.tunnelUp) bw.textContent = Math.round(state.spark[state.spark.length-1])+' KB/s';
+}
+
+/* ---- settings ---- */
+function tplSettings(){
+  const S = state.settings;
+  const row = (k,name,desc)=>'<div class="set-row"><div class="set-info"><div class="set-name">'+name+'</div>'
+    + '<div class="set-desc">'+desc+'</div></div>'
+    + '<label class="switch"><input type="checkbox" data-set="'+k+'"'+(S[k]?' checked':'')+'><i></i></label></div>';
+  return row('confirmCalls','Confirm tool calls','Ask before any tool mutates the workspace')
+    + row('autoRO','Auto-approve read-only','fs.read, fs.list, git.status run without prompts')
+    + row('streamLogs','Stream MCP logs','Live JSON-RPC traffic in the MCP Logs panel')
+    + row('telemetry','Telemetry','Share anonymous usage — off by default')
+    + '<div class="set-row"><div class="set-info"><div class="set-name">Accent</div><div class="set-desc">Emerald — matches the OpenSAM family</div></div><span class="set-swatch"></span></div>'
+    + '<div class="set-row"><div class="set-info"><div class="set-name">Editor font</div><div class="set-desc">ui-monospace · 13px · line 20px</div></div><span class="set-val tnum">13px</span></div>';
+}
+
+/* ---- panel events ---- */
+function wirePanel(){
+  document.querySelectorAll('[data-dir]').forEach(d=>{
+    d.addEventListener('click',()=>{
+      const node = TREE.find(n=>n.dir && n.name===d.dataset.dir);
+      node.open = !node.open; renderPanel();
+    });
+  });
+  document.querySelectorAll('[data-file]').forEach(f=>{
+    f.addEventListener('click',()=>openTab(f.dataset.file));
+  });
+  const si = $('#searchIn');
+  if(si){ si.addEventListener('input',()=>runSearch(si.value)); si.focus(); }
+  document.querySelectorAll('[data-toggle]').forEach(t=>{
+    t.addEventListener('change',()=>{
+      const s = state.servers.find(x=>x.id===t.dataset.toggle);
+      s.enabled = t.checked;
+      termPrint(mcpRowFor(s), true);
+      renderPanel(); renderStatusCounts();
+      pushLog(s.id, 'initialized', t.checked);
+    });
+  });
+  document.querySelectorAll('[data-set]').forEach(t=>{
+    t.addEventListener('change',()=>{ state.settings[t.dataset.set] = t.checked; });
+  });
+  const altH = $('#tunAltH');
+  if(altH) altH.addEventListener('click',()=>$('#tunAlt').classList.toggle('open'));
+  if(state.view==='tunnel') tickSpark(); // draw sparkline immediately, not on next tick
+}
+
+/* ============================================================
+   module: editor (tabs, code, minimap)
+============================================================ */
+function renderTabs(){
+  const bar = $('#tabbar');
+  bar.innerHTML = state.tabs.map(f=>{
+    const ext = f.split('.').pop();
+    const cls = ext==='ts'?'fi-ts':ext==='json'?'fi-json':ext==='md'?'fi-md':ext==='sh'?'fi-sh':'';
+    const tag = ext==='ts'?'TS':ext==='json'?'{}':ext==='md'?'MD':ext==='sh'?'SH':ext.toUpperCase().slice(0,2);
+    return '<div class="tab'+(f===state.activeTab?' active':'')+'" data-tab="'+f+'">'
+      + '<span class="f-ic '+cls+'">'+tag+'</span><span>'+f.split('/').pop()+'</span>'
+      + '<span class="tab-close" data-close="'+f+'">×</span></div>';
+  }).join('')
+  + '<div class="tabbar-end"><span class="edhint">nova-api</span></div>';
+  bar.querySelectorAll('[data-tab]').forEach(t=>t.addEventListener('click',e=>{
+    if(e.target.dataset.close) return;
+    openTab(t.dataset.tab);
+  }));
+  bar.querySelectorAll('[data-close]').forEach(c=>c.addEventListener('click',e=>{
+    e.stopPropagation();
+    closeTab(c.dataset.close);
+  }));
+}
+
+function openTab(f){
+  if(!FILES[f]) return;
+  if(!state.tabs.includes(f)) state.tabs.push(f);
+  state.activeTab = f;
+  state.cursor = {line:1,col:1};
+  renderTabs(); renderEditor(); renderPanel();
+  updatePos();
+}
+
+function closeTab(f){
+  const i = state.tabs.indexOf(f);
+  if(i<0) return;
+  state.tabs.splice(i,1);
+  if(state.activeTab===f) state.activeTab = state.tabs[Math.min(i,state.tabs.length-1)] || '';
+  renderTabs();
+  if(state.activeTab) renderEditor(); else { $('#code').innerHTML=''; $('#gutter').innerHTML=''; $('#minimap').innerHTML=''; }
+  renderPanel();
+}
+
+function renderEditor(){
+  const f = state.activeTab; if(!f) return;
+  const lang = langOf(f);
+  const lines = FILES[f].split('\n');
+  $('#code').innerHTML = lines.map((l,i)=>'<div class="code-line" data-ln="'+(i+1)+'">'+(hlLine(l,lang)||'&nbsp;')+'</div>').join('');
+  $('#gutter').innerHTML = lines.map((_,i)=>'<div class="gn tnum" data-ln="'+(i+1)+'">'+(i+1)+'</div>').join('');
+  $('#minimap').innerHTML = lines.map(l=>{
+    const w = clamp(Math.round(l.trim().length*1.15),4,52);
+    return '<div class="mm-bar" style="width:'+w+'px"></div>';
+  }).join('');
+  $('#edScroll').scrollTop = state.scrollPos[f] || 0;
+  markActiveLine();
+  wireCodeClicks();
+}
+
+function markActiveLine(){
+  document.querySelectorAll('.code-line.active,.gn.active').forEach(e=>e.classList.remove('active'));
+  const cl = $('#code [data-ln="'+state.cursor.line+'"]');
+  const gl = $('#gutter [data-ln="'+state.cursor.line+'"]');
+  if(cl) cl.classList.add('active');
+  if(gl) gl.classList.add('active');
+}
+
+function wireCodeClicks(){
+  $('#code').querySelectorAll('.code-line').forEach(row=>{
+    row.addEventListener('click',e=>{
+      const ln = +row.dataset.ln;
+      const rect = row.getBoundingClientRect();
+      const col = clamp(Math.round((e.clientX-rect.left-14)/CHAR_W)+1,1,300);
+      state.cursor = {line:ln,col};
+      markActiveLine(); updatePos();
+    });
+  });
+}
+let CHAR_W = 7.2;
+(function measure(){
+  const s = document.createElement('span');
+  s.style.cssText = 'position:absolute;visibility:hidden;font:13px '+getComputedStyle(document.body).getPropertyValue('--mono')+';white-space:pre';
+  s.textContent = '0'.repeat(20);
+  document.body.appendChild(s);
+  CHAR_W = s.getBoundingClientRect().width/20 || 7.2;
+  s.remove();
+})();
+
+function jumpToLine(n){
+  state.cursor = {line:n,col:1};
+  markActiveLine(); updatePos();
+  const row = $('#code [data-ln="'+n+'"]');
+  if(row){
+    row.scrollIntoView({block:'center'});
+    row.classList.add('flash');
+    setTimeout(()=>row.classList.remove('flash'),1400);
+  }
+}
+
+function updatePos(){
+  $('#sbPos').textContent = 'Ln '+state.cursor.line+', Col '+state.cursor.col;
+}
+
+/* ============================================================
+   module: bottom panel (terminal, problems, output, logs)
+============================================================ */
+document.querySelectorAll('.bot-tab').forEach(t=>{
+  t.addEventListener('click',()=>setBotTab(t.dataset.bt));
+});
+function setBotTab(id){
+  state.botTab = id;
+  document.querySelectorAll('.bot-tab').forEach(b=>b.classList.toggle('on',b.dataset.bt===id));
+  document.querySelectorAll('.bot-body').forEach(b=>b.classList.toggle('on',b.id==='bb-'+id));
+  if(id==='terminal') focusTerm();
+}
+$('#botChev').addEventListener('click',()=>{
+  state.botCollapsed = !state.botCollapsed;
+  $('#botpanel').classList.toggle('collapsed',state.botCollapsed);
+});
+$('#botClear').addEventListener('click',()=>{
+  $('#term').querySelectorAll('.t-line').forEach(l=>l.remove());
+  if(state.botTab!=='terminal') setBotTab('terminal');
+  focusTerm();
+});
+
+/* ---- terminal ---- */
+const PROMPT_HTML = '<span class="p-user">edison@prism</span><span class="p-dl">:</span><span class="p-path">~/nova-api</span><span class="p-dl">$&nbsp;</span>';
+const term = $('#term');
+let termFocused = false;
+
+function focusTerm(){
+  const inp = $('#termHidden');
+  if(inp) inp.focus();
+}
+function ensureTermInput(){
+  if($('#termHidden')) return;
+  const inp = document.createElement('input');
+  inp.id = 'termHidden'; inp.className = 'term-hidden'; inp.autocomplete = 'off'; inp.spellcheck = false;
+  term.appendChild(inp);
+  inp.addEventListener('input',()=>{ state.termBuf = inp.value; renderTermInput(); });
+  inp.addEventListener('keydown',e=>{
+    if(e.key==='Enter'){
+      e.preventDefault();
+      const cmd = inp.value; inp.value=''; state.termBuf='';
+      execCommand(cmd);
+    } else if(e.key==='ArrowUp'){
+      e.preventDefault();
+      if(state.termHist.length){
+        state.termHistIdx = state.termHistIdx<0 ? state.termHist.length-1 : Math.max(0,state.termHistIdx-1);
+        inp.value = state.termHist[state.termHistIdx]; state.termBuf = inp.value; renderTermInput();
+      }
+    } else if(e.key==='ArrowDown'){
+      e.preventDefault();
+      if(state.termHistIdx>=0){
+        state.termHistIdx++;
+        if(state.termHistIdx>=state.termHist.length){ state.termHistIdx=-1; inp.value=''; }
+        else inp.value = state.termHist[state.termHistIdx];
+        state.termBuf = inp.value; renderTermInput();
+      }
+    }
+  });
+  inp.addEventListener('focus',()=>{ termFocused=true; term.classList.remove('nofocus'); renderTermInput(); });
+  inp.addEventListener('blur',()=>{ termFocused=false; term.classList.add('nofocus'); renderTermInput(); });
+}
+function termPrint(html, asHtml){
+  const d = document.createElement('div');
+  d.className = 't-line' + (asHtml?'':'');
+  d.innerHTML = html;
+  term.insertBefore(d, $('#termInputRow') || null);
+  term.scrollTop = term.scrollHeight;
+}
+function termEcho(cmd){
+  termPrint('<span class="t-cmd">'+PROMPT_HTML+'<span class="c">'+esc(cmd)+'</span></span>');
+}
+function renderTermInput(){
+  const row = $('#termInputRow');
+  if(row) row.querySelector('#typed').innerHTML = esc(state.termBuf);
+}
+function initTerm(){
+  const row = document.createElement('div');
+  row.className = 't-line t-cmd'; row.id = 'termInputRow';
+  row.innerHTML = PROMPT_HTML + '<span id="typed"></span><span class="cur"></span>';
+  term.appendChild(row);
+  term.classList.add('nofocus');
+  term.addEventListener('click',focusTerm);
+  ensureTermInput();
+  termPrint('<span class="t-dim">Prism shell 1.4.2 — nova-api · 5 MCP servers attached</span>');
+  termPrint('<span class="t-dim">Type <span class="t-ok">help</span> to get started.</span>');
+  termPrint('&nbsp;');
+}
+
+function mcpRowFor(s){
+  const st = !s.enabled ? 'offline'.padEnd(9) : (s.status==='warn'?'degraded':'ok').padEnd(9);
+  const color = !s.enabled ? 't-dim' : s.status==='warn' ? 't-warn' : 't-ok';
+  return '  <span class="t-hl">'+s.id.padEnd(12)+'</span><span class="'+color+'">'+st+'</span>'
+    + '<span class="tnum">'+(s.tools.length+' tools').padEnd(10)+'</span><span class="tnum t-dim">'+(s.enabled?s.lat+'ms':'—')+'</span>';
+}
+
+function execCommand(raw){
+  const cmd = raw.trim();
+  termEcho(raw);
+  if(cmd){ state.termHist.push(cmd); state.termHistIdx = -1; }
+  if(!cmd){ term.scrollTop = term.scrollHeight; return; }
+  const [head, ...args] = cmd.split(/\s+/);
+
+  if(head==='clear'){ term.querySelectorAll('.t-line').forEach(l=>{ if(l.id!=='termInputRow') l.remove(); }); return; }
+
+  if(head==='help'){
+    ['<span class="t-hl">Prism shell — commands</span>',
+     '  <span class="t-ok">help</span>                 show this help',
+     '  <span class="t-ok">status</span>               machine and hub overview',
+     '  <span class="t-ok">mcp ls</span>              list MCP servers',
+     '  <span class="t-ok">mcp tools</span> &lt;server&gt;   list tools exposed by a server',
+     '  <span class="t-ok">tunnel up</span> | <span class="t-ok">down</span>    toggle the cloudflare tunnel',
+     '  <span class="t-ok">scan</span>                run a nova-api workspace scan',
+     '  <span class="t-ok">clear</span>                clear the terminal'
+    ].forEach(l=>termPrint(l));
+    termPrint('&nbsp;'); return;
+  }
+
+  if(head==='status'){
+    const on = state.servers.filter(s=>s.enabled);
+    const tools = on.reduce((a,s)=>a+s.tools.length,0);
+    termPrint('  host      <span class="t-hl">prism</span> <span class="t-dim">· ubuntu 24.04 · kernel 6.8.0-45-generic</span>');
+    termPrint('  cpu       <span class="tnum t-ok">'+state.cpu+'%</span> · 8 cores          ram  <span class="tnum t-ok">'+state.ram+'%</span> of 32 GB');
+    termPrint('  mcp       <span class="tnum">'+on.length+' servers · '+tools+' tools</span> <span class="t-dim">· hub 127.0.0.1:4620</span>');
+    termPrint('  tunnel    '+(state.tunnelUp
+      ? '<span class="t-ok">live</span> · prism.eddydev.io · cloudflare access (mfa)'
+      : '<span class="t-warn">offline</span> · run <span class="t-hl">tunnel up</span>'));
+    termPrint('&nbsp;'); return;
+  }
+
+  if(head==='mcp'){
+    if(args[0]==='ls' || !args.length){
+      if(args.length===0 && args[0]!=='ls'){ termPrint('<span class="t-warn">usage: mcp ls</span> or <span class="t-hl">mcp tools &lt;server&gt;</span>'); termPrint('&nbsp;'); return; }
+      termPrint('<span class="t-dim">  NAME         STATUS    TOOLS      AVG</span>');
+      state.servers.forEach(s=>termPrint(mcpRowFor(s)));
+      termPrint('&nbsp;'); return;
+    }
+    if(args[0]==='tools'){
+      const s = state.servers.find(x=>x.id===args[1]);
+      if(!args[1]){ termPrint('<span class="t-warn">usage: mcp tools &lt;server&gt;</span> — try filesystem, git, shell, rea, browser'); termPrint('&nbsp;'); return; }
+      if(!s){ termPrint('<span class="t-err">unknown server: '+esc(args[1])+'</span> — try filesystem, git, shell, rea, browser'); termPrint('&nbsp;'); return; }
+      termPrint('<span class="t-hl">'+s.id+'</span> <span class="t-dim">— '+s.tools.length+' tools · '+s.toolDesc+'</span>');
+      s.tools.forEach(t=>termPrint('  <span class="t-ok">'+t.padEnd(15)+'</span><span class="t-dim">'+toolDesc(t)+'</span>'));
+      termPrint('&nbsp;'); return;
+    }
+    termPrint('<span class="t-err">unknown subcommand: '+esc(args[0])+'</span> — try <span class="t-hl">mcp ls</span>'); termPrint('&nbsp;'); return;
+  }
+
+  if(head==='tunnel'){
+    if(args[0]==='up'){
+      if(state.tunnelUp){ termPrint('<span class="t-warn">⚠ tunnel is already live — prism.eddydev.io</span>'); termPrint('&nbsp;'); return; }
+      setTunnel(true);
+      termPrint('<span class="t-dim">· establishing cloudflared edge connection…</span>');
+      setTimeout(()=>{ termPrint('<span class="t-ok">✓ route prism.eddydev.io → 127.0.0.1:4620</span>');
+        termPrint('<span class="t-ok">✓ access policy enforced — cloudflare access · mfa</span>');
+        termPrint('<span class="t-ok">✓ 3 clients reconnected</span>'); termPrint('&nbsp;'); },420);
+      return;
+    }
+    if(args[0]==='down'){
+      if(!state.tunnelUp){ termPrint('<span class="t-warn">⚠ tunnel already offline</span>'); termPrint('&nbsp;'); return; }
+      setTunnel(false);
+      termPrint('<span class="t-ok">✓ tunnel closed — 3 clients disconnected · edge route removed</span>');
+      termPrint('&nbsp;'); return;
+    }
+    termPrint('tunnel is '+(state.tunnelUp?'<span class="t-ok">live</span> — prism.eddydev.io':'<span class="t-warn">offline</span>')); termPrint('&nbsp;'); return;
+  }
+
+  if(head==='scan'){
+    const steps = [
+      ['<span class="t-dim">· indexing workspace… </span><span class="tnum">214 files (0.4s)</span>', 380],
+      ['<span class="t-dim">· hashing running processes… </span><span class="tnum">86 running</span>', 320],
+      ['<span class="t-dim">· checking open ports… </span><span class="tnum">7 listening · 4620 hub</span>', 300],
+      ['<span class="t-dim">· rea.analyze on src/… </span><span class="tnum">score A-</span>', 520],
+      ['<span class="t-ok">✓ scan complete — no threats · 2 warnings (see Problems)</span>', 240]
+    ];
+    let t = 0;
+    steps.forEach(([html,ms])=>{ t+=ms; setTimeout(()=>termPrint(html),t); });
+    setTimeout(()=>{ termPrint('&nbsp;'); pushLog('rea','scan.complete',true); },t+60);
+    return;
+  }
+
+  termPrint('<span class="t-err">command not found: '+esc(head)+'</span> — type <span class="t-hl">help</span> for available commands');
+  termPrint('&nbsp;');
+}
+function toolDesc(t){
+  const d = {
+    'fs.read':'read a file or byte range','fs.write':'create or overwrite a file','fs.patch':'apply a unified diff hunk',
+    'fs.list':'list a directory','fs.tree':'recursive tree with depths','fs.search':'content search with regex',
+    'fs.stat':'size, mtime, sha256','fs.move':'move or rename','fs.watch':'watch globs for changes','fs.glob':'glob patterns',
+    'fs.grep':'ripgrep wrapper','fs.diff':'diff two files',
+    'git.status':'working tree state','git.diff':'unstaged + staged diffs','git.log':'commit history','git.commit':'commit staged',
+    'git.branch':'list or create branches','git.stage':'stage paths','git.push':'push to origin',
+    'shell.exec':'run one command in sandbox','shell.spawn':'long-running process','shell.kill':'terminate a process','shell.env':'inspect env vars',
+    'rea.analyze':'static + dynamic analysis','rea.decompile':'lift to pseudocode','rea.strings':'extract strings','rea.trace':'trace calls',
+    'rea.hooks':'runtime hooks','rea.symbols':'symbol table','rea.graph':'call graph','rea.unpack':'unpack bundles','rea.report':'markdown report',
+    'br.navigate':'open a URL','br.click':'click a selector','br.type':'type into fields','br.screenshot':'capture viewport','br.pdf':'render to pdf','br.eval':'evaluate JS'
+  };
+  return d[t] || '';
+}
+
+/* ---- problems / output ---- */
+function initProblems(){
+  $('#plist').innerHTML =
+    '<div class="p-row"><span class="glyph w">⚠</span><div class="msg">Unhandled promise returned by hub.call(). Add await or .catch(). <span class="loc">engine.ts:94</span></div></div>'
+    + '<div class="p-row"><span class="glyph w">⚠</span><div class="msg">hub.start() is not awaited before server.listen — race on first request. <span class="loc">server.ts:17</span></div></div>';
+  $('#olist').innerHTML =
+    ['<span class="t-dim">$ npm run build</span>',
+     '&gt; nova-api@1.4.2 build · tsc -p tsconfig.json',
+     '<span class="t-ok">✓ types checked — 11 files, 0 errors</span>',
+     '&gt; prism mcp reload --hub 127.0.0.1:4620',
+     '<span class="t-ok">✓ hub reloaded — 5 servers, 38 tools</span>',
+     '<span class="t-dim">build finished in 1.24s</span>'].map(l=>'<div class="t-line">'+l+'</div>').join('');
+}
+
+/* ---- mcp logs ---- */
+const LOG_SRVS = ['filesystem','git','shell','rea','browser'];
+const LOG_METHODS = ['tools/list','tools/call','resources/list','ping'];
+function pushLog(srv, label, ok){
+  const list = $('#loglist'); if(!list) return;
+  const d = new Date();
+  const ts = pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds())+'.'+String(d.getMilliseconds()).padStart(3,'0');
+  const dir = Math.random()>.5 ? '→' : '←';
+  const id = ri(1,240);
+  const ms = ri(3,52);
+  const line = '{"ts":"'+ts+'","dir":"'+dir+'","srv":"'+srv+'","method":"'+(label||LOG_METHODS[ri(0,3)])+'","id":'+id+',"ms":'+ms+'}';
+  const div = document.createElement('div');
+  div.className = 'syntax';
+  div.innerHTML = hlLine(line,'json');
+  list.appendChild(div);
+  while(list.children.length>60) list.firstChild.remove();
+  list.scrollTop = list.scrollHeight;
+}
+function logLoop(){
+  if(state.settings.streamLogs){
+    const s = state.servers.filter(x=>x.enabled);
+    if(s.length) pushLog(s[ri(0,s.length-1)].id);
+  }
+  setTimeout(logLoop, rnd(1300,2600));
+}
+
+/* ============================================================
+   module: AI cockpit
+============================================================ */
+function renderCkTabs(){
+  $('#ckTabs').innerHTML = state.providers.map(p=>{
+    const on = p.id===state.activeProvider;
+    return '<button class="ck-tab'+(on?' on':'')+'" data-p="'+p.id+'" style="--pc:'+p.color+'">'
+      + '<span class="pd"></span>'+p.name+'</button>';
+  }).join('');
+  document.querySelectorAll('.ck-tab').forEach(b=>b.addEventListener('click',()=>setProvider(b.dataset.p)));
+  document.documentElement.style.setProperty('--pc', PROVIDERS.find(p=>p.id===state.activeProvider).color);
+}
+
+function setProvider(id){
+  state.activeProvider = id;
+  renderCkTabs(); renderMsgs();
+  const p = PROVIDERS.find(x=>x.id===id);
+  $('#chatIn').placeholder = 'Message '+p.name+' — Enter to send, Shift+Enter for a new line';
+}
+
+function chipEl(c){
+  const div = document.createElement('div');
+  div.className = 'chip '+c.state;
+  div.innerHTML = '<div class="chip-h">'+I.chipTool
+    + '<span class="chip-label"><b>'+esc(c.label.split(' · ')[0])+'</b> · '+esc(c.label.split(' · ')[1]||'')+'</span>'
+    + '<span class="chip-state"></span></div>'
+    + '<div class="chip-json syntax">'+hlLine(JSON.stringify(c.json,null,2),'json')+'</div>';
+  const st = div.querySelector('.chip-state');
+  function renderState(){
+    if(c.state==='pending'){
+      st.innerHTML = '<span class="pd"></span><span class="chip-btns"><button class="chip-btn approve">Approve</button><button class="chip-btn deny">Deny</button></span>';
+      st.querySelector('.approve').addEventListener('click',e=>{
+        e.stopPropagation();
+        c.state='approved'; c.ms = ri(42,140);
+        div.classList.remove('pending'); div.classList.add('approved');
+        renderState(); pushLog('hub','tools/call · approved',true);
+      });
+      st.querySelector('.deny').addEventListener('click',e=>{
+        e.stopPropagation();
+        c.state='denied';
+        div.classList.remove('pending'); div.classList.add('denied');
+        renderState(); pushLog('hub','tools/call · denied',false);
+      });
+    } else if(c.state==='approved'){
+      st.innerHTML = 'Approved ✓ <span class="chip-ms">'+c.ms+'ms</span>';
+    } else {
+      st.textContent = 'Denied';
+    }
+  }
+  renderState();
+  div.querySelector('.chip-h').addEventListener('click',()=>div.classList.toggle('open'));
+  return div;
+}
+
+function msgEl(m, color){
+  const div = document.createElement('div');
+  const isUser = m.who==='user';
+  div.className = 'msg'+(isUser?' user':'');
+  div.style.setProperty('--pc', color);
+  const name = isUser ? 'Edison' : (PROVIDERS.find(p=>p.id===state.activeProvider)||{}).name || 'Assistant';
+  div.innerHTML = '<div class="msg-head"><span class="msg-av"></span><span class="msg-name">'+esc(isUser?'Edison':m.pname||name)+'</span><span class="msg-time">'+esc(m.time||'now')+'</span></div>'
+    + '<div class="msg-body">'+esc(m.text)+'</div>';
+  if(m.chips && m.chips.length) m.chips.forEach(c=>div.appendChild(chipEl(c)));
+  return div;
+}
+
+function renderMsgs(){
+  const wrap = $('#ckMsgs');
+  const p = state.providers.find(x=>x.id===state.activeProvider);
+  wrap.innerHTML = '';
+  p.msgs.forEach(m=>wrap.appendChild(msgEl(m, p.color)));
+  wrap.scrollTop = wrap.scrollHeight;
+}
+
+function setProvider_(id){ setProvider(id); }
+
+function sendChat(){
+  const ta = $('#chatIn');
+  const text = ta.value.trim();
+  if(!text) return;
+  ta.value = ''; autoGrow();
+  const p = state.providers.find(x=>x.id===state.activeProvider);
+  p.msgs.push({who:'user', text, time:'now'});
+  renderMsgs();
+
+  const th = document.createElement('div');
+  th.className = 'msg thinking';
+  th.style.setProperty('--pc', p.color);
+  th.innerHTML = '<div class="msg-head"><span class="msg-av"></span><span class="msg-name">'+p.name+'</span></div>'
+    + '<div class="msg-body"><span class="d"></span><span class="d"></span><span class="d"></span></div>';
+  $('#ckMsgs').appendChild(th);
+  $('#ckMsgs').scrollTop = $('#ckMsgs').scrollHeight;
+
+  setTimeout(()=>{
+    const canned = CANNED[p.id][p.replyIdx % CANNED[p.id].length];
+    p.replyIdx++;
+    const m = {who:'ai', text:canned.text, time:'now', chips:[{...canned.chip, state: state.settings.confirmCalls ? 'pending' : 'approved', ms: state.settings.confirmCalls ? null : ri(30,120)}]};
+    m.chips[0].json = {...canned.chip.json};
+    p.msgs.push(m);
+    renderMsgs();
+    pushLog(p.id,'tools/call · proposed',true);
+  }, 620);
+}
+
+function toggleCockpit(){
+  state.cockpitHidden = !state.cockpitHidden;
+  $('#app').classList.toggle('cockpit-hidden',state.cockpitHidden);
+  renderActivity();
+}
+
+$('#sendBtn').addEventListener('click',sendChat);
+const chatIn = $('#chatIn');
+function autoGrow(){ chatIn.style.height='auto'; chatIn.style.height=Math.min(chatIn.scrollHeight,96)+'px'; }
+chatIn.addEventListener('input',autoGrow);
+chatIn.addEventListener('keydown',e=>{
+  if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendChat(); }
+});
+
+/* ============================================================
+   module: status bar
+============================================================ */
+function renderStatusCounts(){
+  const on = state.servers.filter(s=>s.enabled);
+  const tools = on.reduce((a,s)=>a+s.tools.length,0);
+  $('#sbMcpTxt').textContent = 'MCP: '+on.length+' servers · '+tools+' tools';
+}
+function setTunnel(up){
+  state.tunnelUp = up;
+  if(up){ state.tunnelSince = Date.now(); state.tunnelBase = 0; }
+  $('#sbTunnelTxt').textContent = up ? 'Tunnel: LIVE' : 'Tunnel: OFFLINE';
+  $('#sbTunnelDot').className = 'sb-dot ' + (up?'live':'');
+  $('#ckTunnel').textContent = up ? 'live' : 'offline';
+  if(state.view==='tunnel') renderPanel();
+}
+$('#sbMcp').addEventListener('click',()=>{ state.view='mcp'; renderActivity(); renderPanel(); });
+$('#sbTunnel').addEventListener('click',()=>{ state.view='tunnel'; renderActivity(); renderPanel(); });
+
+function tickClock(){
+  const d = new Date();
+  $('#sbClock').textContent = pad(d.getHours())+':'+pad(d.getMinutes());
+}
+function tickPerf(){
+  state.cpu = clamp(state.cpu + ri(-2,2), 9, 18);
+  state.ram = clamp(state.ram + ri(-1,1), 39, 44);
+  $('#sbPerf').textContent = 'CPU '+state.cpu+'% · RAM '+state.ram+'%';
+}
+function tickTok(){
+  state.tokTarget = clamp(state.tokTarget + ri(-90,90), 620, 1450);
+  state.tok += (state.tokTarget-state.tok)*0.22;
+  $('#tokRate').textContent = fmt(Math.round(state.tok))+' tok/s';
+}
+
+/* ---- sparkline ---- */
+function initSpark(){
+  let v = 112;
+  for(let i=0;i<24;i++){ v = clamp(v+rnd(-14,14),40,170); state.spark.push(v); }
+}
+function tickSpark(){
+  const last = state.spark[state.spark.length-1];
+  const target = state.tunnelUp ? clamp(last+rnd(-16,16),40,170) : 0;
+  state.spark.push(state.tunnelUp ? target : last*0.55);
+  if(state.spark.length>24) state.spark.shift();
+  const line = $('#sparkLine'), fill = $('#sparkFill');
+  if(!line) return;
+  const pts = state.spark.map((v,i)=>{
+    const x = (i/(state.spark.length-1))*100;
+    const y = 28 - (v/180)*26;
+    return x.toFixed(1)+','+y.toFixed(1);
+  });
+  line.setAttribute('points',pts.join(' '));
+  fill.setAttribute('d','M0,30 L'+pts.join(' L')+' L100,30 Z');
+}
+
+/* ============================================================
+   module: command palette
+============================================================ */
+const COMMANDS = [
+  {label:'Toggle Terminal', hint:'⌘J', icon:'cmd', run:()=>{ if(state.botTab!=='terminal'||state.botCollapsed){ state.botCollapsed=false; $('#botpanel').classList.remove('collapsed'); setBotTab('terminal'); } else { state.botCollapsed=true; $('#botpanel').classList.add('collapsed'); } }},
+  {label:'Toggle AI Cockpit', hint:'', icon:'cockpit', run:toggleCockpit},
+  {label:'Open Explorer', hint:'', icon:'explorer', run:()=>{ state.view='explorer'; renderActivity(); renderPanel(); }},
+  {label:'Open Search', hint:'', icon:'search', run:()=>{ state.view='search'; renderActivity(); renderPanel(); }},
+  {label:'Open MCP Hub', hint:'', icon:'mcp', run:()=>{ state.view='mcp'; renderActivity(); renderPanel(); }},
+  {label:'Open Tunnel', hint:'', icon:'tunnel', run:()=>{ state.view='tunnel'; renderActivity(); renderPanel(); }},
+  {label:'Go to File…', hint:'', icon:'fileIc', run:()=>openPalette('files')},
+  {label:'Run scan', hint:'terminal', icon:'cmd', run:()=>{ state.botCollapsed=false; $('#botpanel').classList.remove('collapsed'); setBotTab('terminal'); execCommand('scan'); }},
+  {label:'Tunnel up', hint:'', icon:'tunnel', run:()=>{ state.botCollapsed=false; $('#botpanel').classList.remove('collapsed'); setBotTab('terminal'); execCommand('tunnel up'); }},
+  {label:'Tunnel down', hint:'', icon:'tunnel', run:()=>{ state.botCollapsed=false; $('#botpanel').classList.remove('collapsed'); setBotTab('terminal'); execCommand('tunnel down'); }},
+  {label:'Switch provider: Claude', hint:'cockpit', icon:'cockpit', run:()=>{ setProvider('claude'); if(state.cockpitHidden) toggleCockpit(); }},
+  {label:'Switch provider: GPT', hint:'cockpit', icon:'cockpit', run:()=>{ setProvider('gpt'); if(state.cockpitHidden) toggleCockpit(); }},
+  {label:'Switch provider: Gemini', hint:'cockpit', icon:'cockpit', run:()=>{ setProvider('gemini'); if(state.cockpitHidden) toggleCockpit(); }},
+  {label:'Switch provider: GLM', hint:'cockpit', icon:'cockpit', run:()=>{ setProvider('glm'); if(state.cockpitHidden) toggleCockpit(); }},
+  {label:'Clear terminal', hint:'', icon:'cmd', run:()=>{ setBotTab('terminal'); term.querySelectorAll('.t-line').forEach(l=>{ if(l.id!=='termInputRow') l.remove(); }); }}
+];
+const palBack = $('#palBack'), palIn = $('#palIn'), palList = $('#palList');
+let palMode = 'commands', palItems = [], palIdx = 0;
+
+function openPalette(mode){
+  palMode = mode || 'commands';
+  palBack.classList.add('open');
+  palIn.value = '';
+  palIn.placeholder = palMode==='files' ? 'Go to file…' : 'Type a command…';
+  renderPal('');
+  setTimeout(()=>palIn.focus(),0);
+}
+function closePalette(){ palBack.classList.remove('open'); }
+
+function fuzzy(q, s){
+  q = q.toLowerCase(); s = s.toLowerCase();
+  if(!q) return {score:1, idx:[]};
+  let qi=0, score=0, run=0, idx=[];
+  for(let i=0;i<s.length && qi<q.length;i++){
+    if(s[i]===q[qi]){ idx.push(i); qi++; run++; score += 2+run; if(i===0||/[\s./-]/.test(s[i-1])) score+=4; }
+    else run=0;
+  }
+  return qi===q.length ? {score, idx} : null;
+}
+function hlFuzzy(s, idx){
+  let out='';
+  for(let i=0;i<s.length;i++){
+    out += idx.includes(i) ? '<b>'+esc(s[i])+'</b>' : esc(s[i]);
+  }
+  return out;
+}
+function renderPal(q){
+  let items;
+  if(palMode==='files'){
+    items = Object.keys(FILES).map(f=>({label:f, hint:'file', icon:'fileIc', run:()=>openTab(f)}));
+  } else {
+    items = COMMANDS;
+  }
+  const scored = items.map(it=>({it, m:fuzzy(q, it.label)})).filter(x=>x.m).sort((a,b)=>b.m.score-a.m.score);
+  palItems = scored.map(x=>x.it);
+  palIdx = 0;
+  if(!palItems.length){
+    palList.innerHTML = '<div class="pal-empty">No '+(palMode==='files'?'files':'commands')+' matching “'+esc(q)+'”</div>';
+    return;
+  }
+  palList.innerHTML = palItems.map((it,i)=>
+    '<div class="pal-item'+(i===0?' sel':'')+'" data-i="'+i+'">'+I[it.icon]
+    +'<span class="pl-label">'+hlFuzzy(it.label, scored[i].m.idx)+'</span>'
+    +'<span class="pl-hint">'+esc(it.hint||'')+'</span></div>').join('');
+  palList.querySelectorAll('.pal-item').forEach(el=>el.addEventListener('click',()=>runPal(+el.dataset.i)));
+}
+function runPal(i){
+  const it = palItems[i]; if(!it) return;
+  closePalette();
+  it.run();
+}
+palIn.addEventListener('input',()=>renderPal(palIn.value));
+palIn.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){ closePalette(); }
+  else if(e.key==='ArrowDown'){ e.preventDefault(); palIdx=Math.min(palIdx+1,palItems.length-1); markPal(); }
+  else if(e.key==='ArrowUp'){ e.preventDefault(); palIdx=Math.max(palIdx-1,0); markPal(); }
+  else if(e.key==='Enter'){ e.preventDefault(); runPal(palIdx); }
+});
+function markPal(){
+  palList.querySelectorAll('.pal-item').forEach((el,i)=>el.classList.toggle('sel',i===palIdx));
+  const sel = palList.querySelector('.pal-item.sel');
+  if(sel) sel.scrollIntoView({block:'nearest'});
+}
+palBack.addEventListener('mousedown',e=>{ if(e.target===palBack) closePalette(); });
+
+document.addEventListener('keydown',e=>{
+  if((e.metaKey||e.ctrlKey) && e.key.toLowerCase()==='k'){
+    e.preventDefault();
+    palBack.classList.contains('open') ? closePalette() : openPalette('commands');
+  }
+  else if((e.metaKey||e.ctrlKey) && e.key==='`'){
+    e.preventDefault();
+    COMMANDS[0].run();
+  }
+  else if(e.key==='Escape' && palBack.classList.contains('open')){
+    closePalette();
+  }
+});
+
+/* ============================================================
+   boot
+============================================================ */
+renderActivity();
+renderPanel();
+renderTabs();
+renderEditor();
+updatePos();
+initTerm();
+initProblems();
+initSpark();
+tickSpark();
+renderCkTabs();
+renderMsgs();
+renderStatusCounts();
+tickClock(); tickPerf(); tickTok();
+
+setInterval(tickClock,1000);
+setInterval(tickPerf,2200);
+setInterval(tickTok,420);
+setInterval(tickSpark,1000);
+setInterval(tickTunnelView,1000);
+logLoop();
+
+})();
+</script>
+</body>
+</html>
