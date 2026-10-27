@@ -1,24 +1,8 @@
-# Prism IDE — your machine, every AI, one cockpit
+# Prism — AI-native IDE (interface concept)
 
-A web IDE prototype that shows the target experience for a personal AI cockpit:
+A self-contained, single-file IDE interface exploring what a modern
+AI-native development environment could look like: activity bar, MCP hub,
+AI cockpit with multi-provider tool approval, interactive terminal,
+tunnels and a command palette (⌘K).
 
-- **File explorer + editor** with syntax highlighting and terminal
-- **MCP Hub** — aggregate every tool server (filesystem, git, shell, rea, browser) behind one endpoint
-- **AI Cockpit** — Claude, GPT, Gemini and GLM side by side, each connected through MCP, with tool-call approval gates
-- **Tunnel panel** — bring cloud AIs to your machine via Cloudflare Tunnel / Tailscale (zero-trust, MFA)
-
-Fully self-contained single `index.html` (no build, no dependencies).
-
-## Run it
-
-Open `index.html` in any browser, or visit the GitHub Pages deployment.
-
-## Making it real on your machine
-
-```bash
-# 1) install the REA MCP toolkit
-npm install -g rea-agents && rea setup --all-detected
-
-# 2) expose the local hub to cloud AIs (authenticated tunnel)
-cloudflared tunnel --url http://127.0.0.1:4620
-```
+Open live: https://eddyflores100-lang.github.io/prism-ide/
